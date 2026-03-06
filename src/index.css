@@ -1,0 +1,190 @@
+@import url('https://api.fontshare.com/v2/css?f[]=clash-display@200,300,400,500,600,700&f[]=general-sans@200,300,400,500,600,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 10% 96%;
+    --foreground: 240 10% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 10%;
+    --primary: 239 84% 67%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 10% 90%;
+    --secondary-foreground: 240 10% 10%;
+    --muted: 240 10% 92%;
+    --muted-foreground: 240 5% 46%;
+    --accent: 239 84% 67%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 10% 87%;
+    --input: 240 10% 87%;
+    --ring: 239 84% 67%;
+    --radius: 0.5rem;
+    --sidebar-background: 240 10% 94%;
+    --sidebar-foreground: 240 5% 30%;
+    --sidebar-primary: 239 84% 67%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 239 84% 95%;
+    --sidebar-accent-foreground: 239 84% 40%;
+    --sidebar-border: 240 10% 90%;
+    --sidebar-ring: 239 84% 67%;
+
+    /* Bellum semantic tokens — light mode */
+    --bellum-bg-primary: 240 10% 96%;
+    --bellum-bg-secondary: 0 0% 100%;
+    --bellum-bg-tertiary: 240 10% 92%;
+    --bellum-success: 142 71% 45%;
+    --bellum-warning: 38 92% 50%;
+    --bellum-danger: 0 84% 60%;
+    --bellum-score-high: 142 71% 45%;
+    --bellum-score-medium: 38 92% 50%;
+    --bellum-score-low: 0 84% 60%;
+  }
+
+  .dark {
+    --background: 240 20% 4%;
+    --foreground: 240 10% 96%;
+    --card: 240 17% 8%;
+    --card-foreground: 240 10% 96%;
+    --popover: 240 17% 8%;
+    --popover-foreground: 240 10% 96%;
+    --primary: 239 84% 67%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 17% 10%;
+    --secondary-foreground: 240 10% 96%;
+    --muted: 240 17% 10%;
+    --muted-foreground: 240 10% 55%;
+    --accent: 239 84% 67%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 17% 14%;
+    --input: 240 17% 14%;
+    --ring: 239 84% 67%;
+    --sidebar-background: 240 17% 6%;
+    --sidebar-foreground: 240 10% 75%;
+    --sidebar-primary: 239 84% 67%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 239 84% 12%;
+    --sidebar-accent-foreground: 239 84% 70%;
+    --sidebar-border: 240 17% 11%;
+    --sidebar-ring: 239 84% 67%;
+
+    /* Bellum semantic tokens */
+    --bellum-bg-primary: 240 20% 4%;
+    --bellum-bg-secondary: 240 17% 8%;
+    --bellum-bg-tertiary: 240 15% 12%;
+    --bellum-success: 142 71% 45%;
+    --bellum-warning: 38 92% 50%;
+    --bellum-danger: 0 84% 60%;
+    --bellum-score-high: 142 71% 45%;
+    --bellum-score-medium: 38 92% 50%;
+    --bellum-score-low: 0 84% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'General Sans', system-ui, sans-serif;
+  }
+
+  html {
+    @apply dark;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Clash Display', 'General Sans', system-ui, sans-serif;
+    font-weight: 600;
+  }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+@layer utilities {
+  .bellum-glow {
+    box-shadow: 0 0 20px -5px hsl(239 84% 67% / 0.3);
+  }
+
+  .bellum-glow-strong {
+    box-shadow: 0 0 30px -5px hsl(239 84% 67% / 0.5);
+  }
+
+  .text-gradient-bellum {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, hsl(239 84% 67%), hsl(239 84% 80%));
+  }
+
+  .font-display {
+    font-family: 'Clash Display', 'General Sans', system-ui, sans-serif;
+  }
+
+  .font-body {
+    font-family: 'General Sans', system-ui, sans-serif;
+  }
+
+  /* Search bar glow on focus */
+  .search-glow:focus-within {
+    box-shadow: 0 0 0 1px hsl(239 84% 67% / 0.4), 0 0 20px -4px hsl(239 84% 67% / 0.35);
+    border-color: hsl(239 84% 67% / 0.5);
+    transition: box-shadow 0.3s ease, border-color 0.3s ease;
+  }
+
+  .search-glow {
+    transition: box-shadow 0.3s ease, border-color 0.3s ease;
+  }
+
+  /* Card hover lift */
+  .card-hover {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px -8px hsl(239 84% 67% / 0.15);
+  }
+
+  /* Table row hover glow */
+  .row-hover {
+    transition: background-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .row-hover:hover {
+    background-color: hsl(239 84% 67% / 0.04) !important;
+    box-shadow: inset 3px 0 0 hsl(239 84% 67% / 0.5);
+  }
+
+  /* Badge pulse on high score */
+  .score-pulse {
+    animation: score-ping 2s cubic-bezier(0, 0, 0.2, 1) 1;
+  }
+  @keyframes score-ping {
+    0% { box-shadow: 0 0 0 0 hsl(142 71% 45% / 0.4); }
+    70% { box-shadow: 0 0 0 6px hsl(142 71% 45% / 0); }
+    100% { box-shadow: 0 0 0 0 hsl(142 71% 45% / 0); }
+  }
+
+  /* Button press effect */
+  .btn-press:active {
+    transform: scale(0.97);
+  }
+  .btn-press {
+    transition: transform 0.1s ease;
+  }
+
+  /* Sidebar link hover indicator */
+  .nav-glow:hover {
+    box-shadow: inset 3px 0 0 hsl(239 84% 67% / 0.4);
+  }
+}
