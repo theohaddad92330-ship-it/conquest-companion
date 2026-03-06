@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
@@ -29,13 +29,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { savedAccounts } from "@/lib/mock-data";
-import { credits as mockCredits, creditsPercentage as mockCreditsPercentage } from "@/lib/credits";
+import { useAccounts } from "@/hooks/useAccounts";
+import { useCredits } from "@/hooks/useCredits";
 import { EmptyState } from "@/components/EmptyState";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
-import { useAccounts } from "@/hooks/useAccounts";
-import { useCredits } from "@/hooks/useCredits";
 import {
   BarChart,
   Bar,
@@ -53,62 +51,25 @@ import {
 const fadeUp = { hidden: { opacity: 0, y: 15 }, visible: { opacity: 1, y: 0 } };
 const stagger = { visible: { transition: { staggerChildren: 0.08 } } };
 
-const weeklyData = [
-  { name: "Lun", value: 3 },
-  { name: "Mar", value: 5 },
-  { name: "Mer", value: 2 },
-  { name: "Jeu", value: 7 },
-  { name: "Ven", value: 4 },
-  { name: "Sam", value: 1 },
-  { name: "Dim", value: 0 },
-];
-
-const trendData = [
-  { name: "S1", comptes: 2, contacts: 45 },
-  { name: "S2", comptes: 5, contacts: 120 },
-  { name: "S3", comptes: 3, contacts: 85 },
-  { name: "S4", comptes: 8, contacts: 210 },
-  { name: "S5", comptes: 6, contacts: 167 },
-  { name: "S6", comptes: 12, contacts: 320 },
-];
-
-const scoreData = [
-  { name: "8-10", value: 40, color: "hsl(142 71% 45%)" },
-  { name: "5-7", value: 35, color: "hsl(38 92% 50%)" },
-  { name: "1-4", value: 25, color: "hsl(0 84% 60%)" },
-];
-
-const sectorData = [
-  { name: "Banque", pct: 45 },
-  { name: "Industrie", pct: 25 },
-  { name: "Retail", pct: 15 },
-  { name: "Autre", pct: 15 },
-];
-
 export default function Dashboard() {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const { user } = useAuth();
   const { profile } = useProfile();
   const { accounts } = useAccounts();
-  const { credits } = useCredits();
+  const { credits: userCredits, usagePercent, remaining } = useCredits();
   const firstName = profile?.full_name?.split(" ")[0] || user?.user_metadata?.full_name?.split(" ")[0] || user?.user_metadata?.name?.split(" ")[0] || "";
 
   const handleSearch = () => {
     if (query.trim()) navigate(`/search?q=${encodeURIComponent(query.trim())}`);
   };
 
-  const displayAccounts = accounts.length > 0 ? accounts : savedAccounts;
-  const hasAccounts = displayAccounts.length > 0;
+  const hasAccounts = accounts.length > 0;
 
-  const creditUsed = credits?.accounts_used ?? mockCredits.used;
-  const creditTotal = credits?.accounts_limit ?? mockCredits.total;
-  const remaining = Math.max(creditTotal - creditUsed, 0);
-  const creditPercent = credits
-    ? Math.round((creditUsed / Math.max(creditTotal, 1)) * 100)
-    : mockCreditsPercentage();
+  const creditUsed = userCredits?.accounts_used ?? 0;
+  const creditTotal = userCredits?.accounts_limit ?? 3;
 
-  const completedAccounts = displayAccounts.filter((a: any) => a.status === "completed");
+  const completedAccounts = accounts.filter((a: any) => a.status === "completed");
   const avgScore =
     completedAccounts.length > 0
       ? (
@@ -118,11 +79,99 @@ export default function Dashboard() {
       : "—";
 
   const kpis = [
-    { label: "Comptes analysés", value: String(displayAccounts.length), sub: "au total", icon: BarChart3, trend: "", trendUp: true },
-    { label: "Contacts identifiés", value: "—", sub: "à venir", icon: Users, trend: "", trendUp: true },
-    { label: "Messages générés", value: "—", sub: "à venir", icon: Mail, trend: "", trendUp: true },
+    { label: "Comptes analysés", value: String(accounts.length), sub: "au total", icon: BarChart3, trend: "", trendUp: true },
+    {
+      label: "Contacts identifiés",
+      value: String(accounts.reduce((sum, a) => sum + (a.raw_analysis?.contacts?.length || 0), 0)),
+      sub: "au total",
+      icon: Users,
+      trend: "",
+      trendUp: true,
+    },
+    {
+      label: "Messages générés",
+      value: String(
+        accounts.reduce(
+          (sum, a) =>
+            sum +
+            (a.raw_analysis?.contacts?.reduce(
+              (acc: number, c: any) =>
+                acc +
+                (c.emailMessage ? 1 : 0) +
+                (c.linkedinMessage ? 1 : 0) +
+                (c.followupMessage ? 1 : 0),
+              0,
+            ) || 0),
+        0,
+      ),
+      sub: "emails / LinkedIn / relances",
+      icon: Mail,
+      trend: "",
+      trendUp: true,
+    },
     { label: "Score moyen", value: String(avgScore), sub: "/10", icon: Target, trend: "", trendUp: true },
   ];
+
+  const weeklyData = useMemo(() => {
+    const days = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+    return days.map((name, i) => ({
+      name,
+      value: accounts.filter(a => new Date(a.created_at).getDay() === (i + 1) % 7).length,
+    }));
+  }, [accounts]);
+
+  const trendData = useMemo(() => {
+    // Approximation simple : compter les comptes par semaine (4 dernières semaines)
+    const weeks = ["S-3", "S-2", "S-1", "Semaine"];
+    const now = new Date();
+    return weeks.map((name, idx) => {
+      const start = new Date(now);
+      start.setDate(now.getDate() - (3 - idx) * 7);
+      const end = new Date(start);
+      end.setDate(start.getDate() + 7);
+      const comptes = accounts.filter(a => {
+        const d = new Date(a.created_at);
+        return d >= start && d < end;
+      }).length;
+      const contacts = accounts.reduce((sum, a) => {
+        const d = new Date(a.created_at);
+        if (d >= start && d < end) {
+          return sum + (a.raw_analysis?.contacts?.length || 0);
+        }
+        return sum;
+      }, 0);
+      return { name, comptes, contacts };
+    });
+  }, [accounts]);
+
+  const scoreData = useMemo(() => {
+    const buckets = { high: 0, medium: 0, low: 0 };
+    accounts.forEach(a => {
+      const s = a.priority_score ?? 0;
+      if (s >= 8) buckets.high += 1;
+      else if (s >= 5) buckets.medium += 1;
+      else buckets.low += 1;
+    });
+    const total = accounts.length || 1;
+    return [
+      { name: "8-10", value: Math.round((buckets.high / total) * 100), color: "hsl(142 71% 45%)" },
+      { name: "5-7", value: Math.round((buckets.medium / total) * 100), color: "hsl(38 92% 50%)" },
+      { name: "1-4", value: Math.round((buckets.low / total) * 100), color: "hsl(0 84% 60%)" },
+    ];
+  }, [accounts]);
+
+  const sectorData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    accounts.forEach(a => {
+      const sector = a.sector || "Autre";
+      counts[sector] = (counts[sector] || 0) + 1;
+    });
+    const total = accounts.length || 1;
+    return Object.entries(counts).map(([name, count]) => ({
+      name,
+      pct: Math.round((count / total) * 100),
+    }));
+  }, [accounts]);
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
@@ -167,7 +216,7 @@ export default function Dashboard() {
         <motion.div variants={fadeUp} className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           {kpis.map((kpi) => (
             <Card key={kpi.label} className="border-border card-hover group">
-              <CardContent className="p-4 space-y-2">
+            <CardContent className="p-4 space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 group-hover:bg-primary/15 transition-colors">
@@ -200,10 +249,10 @@ export default function Dashboard() {
                   <span className="text-sm font-semibold">Crédits restants</span>
                   <span className="font-display text-lg font-bold">
                     {remaining}
-                    <span className="text-sm text-foreground/40 font-normal">/{creditTotal}</span>
+                  <span className="text-sm text-foreground/40 font-normal">/{creditTotal}</span>
                   </span>
                 </div>
-                <Progress value={creditPercent} className="h-2" />
+                <Progress value={usagePercent} className="h-2" />
                 <p className="text-xs text-foreground/40 mt-1.5">Renouvellement le 1er du mois prochain</p>
               </div>
               <Button variant="outline" size="sm" onClick={() => navigate("/billing")} className="shrink-0">

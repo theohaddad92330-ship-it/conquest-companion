@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Settings, Plus, X, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -6,29 +6,47 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { useProfile } from "@/hooks/useProfile";
 
 const fadeUp = { hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } };
 
-const defaultProfile = {
-  esnName: "Devoteam",
-  size: "50 - 200 consultants",
-  offers: ["Développement", "Data & IA", "Cloud & DevOps"],
-  sectors: ["Banque-Assurance", "Industrie"],
-  clientType: ["Grands comptes (CAC40, SBF120)", "ETI (500 - 5000 salariés)"],
-  personas: ["DSI / CTO", "Achats IT", "CDO / Data"],
-  geo: ["Île-de-France", "Régions (France)"],
-  bench: ["3 dev Java senior", "2 data engineers", "1 archi cloud AWS"],
-  style: "direct",
-  references: ["BNP — 12 consultants", "Airbus — mission data"],
-  excludedPersonas: ["Stagiaires", "Marketing", "RH non-IT"],
-};
-
 export default function Profile() {
   const { toast } = useToast();
-  const [profile, setProfile] = useState(defaultProfile);
+  const { profile: dbProfile, updateProfile } = useProfile();
+  const onboardingData = dbProfile?.onboarding_data || {};
+  const [profile, setProfile] = useState({
+    esnName: onboardingData.esnName || "",
+    size: onboardingData.size || "",
+    offers: onboardingData.offers || [],
+    sectors: onboardingData.sectors || [],
+    clientType: onboardingData.clientType || [],
+    personas: onboardingData.personas || [],
+    geo: onboardingData.geo || [],
+    bench: onboardingData.bench || [],
+    style: onboardingData.style || "direct",
+    references: onboardingData.references || [],
+    excludedPersonas: onboardingData.excludedPersonas || [],
+  });
   const [newBench, setNewBench] = useState("");
   const [newRef, setNewRef] = useState("");
   const [newExcluded, setNewExcluded] = useState("");
+
+  useEffect(() => {
+    const data = dbProfile?.onboarding_data || {};
+    setProfile({
+      esnName: data.esnName || "",
+      size: data.size || "",
+      offers: data.offers || [],
+      sectors: data.sectors || [],
+      clientType: data.clientType || [],
+      personas: data.personas || [],
+      geo: data.geo || [],
+      bench: data.bench || [],
+      style: data.style || "direct",
+      references: data.references || [],
+      excludedPersonas: data.excludedPersonas || [],
+    });
+  }, [dbProfile]);
 
   const addItem = (field: "bench" | "references" | "excludedPersonas", value: string, setter: (v: string) => void) => {
     if (value.trim()) {
@@ -48,7 +66,13 @@ export default function Profile() {
           <Settings className="h-5 w-5 text-primary" />
           <h1 className="font-display text-xl font-bold">Mon profil ESN</h1>
         </div>
-        <Button size="sm" onClick={() => toast({ title: "Profil enregistré", description: "Vos modifications ont été sauvegardées." })}>
+        <Button
+          size="sm"
+          onClick={async () => {
+            await updateProfile({ onboarding_data: { ...(dbProfile?.onboarding_data || {}), ...profile } });
+            toast({ title: "Profil enregistré", description: "Vos modifications ont été sauvegardées." });
+          }}
+        >
           Enregistrer
         </Button>
       </motion.div>
@@ -67,7 +91,7 @@ export default function Profile() {
 
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Taille</label>
-                <Input value={profile.size} readOnly className="bg-background text-muted-foreground" />
+                <Input value={profile.size} onChange={(e) => setProfile(p => ({ ...p, size: e.target.value }))} className="bg-background" />
               </div>
 
               <ChipSection label="Offres" items={profile.offers} color="primary" />

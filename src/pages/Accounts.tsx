@@ -14,7 +14,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { savedAccounts } from "@/lib/mock-data";
 import { EmptyState } from "@/components/EmptyState";
 import { useToast } from "@/hooks/use-toast";
 import { useAccounts } from "@/hooks/useAccounts";
@@ -25,7 +24,7 @@ const PAGE_SIZE = 7;
 export default function Accounts() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { accounts } = useAccounts();
+  const { accounts, isLoading } = useAccounts();
   const [search, setSearch] = useState("");
   const [sectorFilter, setSectorFilter] = useState("all");
   const [scoreFilter, setScoreFilter] = useState("all");
@@ -35,7 +34,7 @@ export default function Accounts() {
   const [page, setPage] = useState(1);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const displayAccounts: any[] = accounts.length > 0 ? accounts : savedAccounts;
+  const displayAccounts: any[] = accounts;
   const sectors = [...new Set(displayAccounts.map((a) => a.sector ?? a.sector).filter(Boolean))];
 
   const now = new Date();
@@ -73,6 +72,14 @@ export default function Accounts() {
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  if (isLoading) {
+    return (
+      <div className="p-6 max-w-5xl mx-auto">
+        <p className="text-sm text-muted-foreground">Chargement des comptes...</p>
+      </div>
+    );
+  }
 
   if (displayAccounts.length === 0) {
     return (

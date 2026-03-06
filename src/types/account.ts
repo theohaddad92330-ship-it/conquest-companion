@@ -1,3 +1,7 @@
+// ============================================
+// Types Bellum AI — correspondance exacte avec les tables Supabase
+// ============================================
+
 export interface AccountAnalysis {
   id: string;
   user_id: string;
@@ -28,14 +32,7 @@ export interface Contact {
   full_name: string;
   title: string | null;
   entity: string | null;
-  decision_role:
-    | 'sponsor'
-    | 'champion'
-    | 'operational'
-    | 'purchasing'
-    | 'blocker'
-    | 'influencer'
-    | 'unknown';
+  decision_role: 'sponsor' | 'champion' | 'operational' | 'purchasing' | 'blocker' | 'influencer' | 'unknown';
   priority: number;
   email: string | null;
   email_verified: boolean;
@@ -57,17 +54,20 @@ export interface Contact {
 export interface AttackAngle {
   id: string;
   account_id: string;
+  user_id: string;
   title: string;
   description: string | null;
   entry_point: string | null;
   is_recommended: boolean;
   rank: number;
+  created_at: string;
 }
 
 export interface ActionPlan {
   id: string;
   account_id: string;
-  strategy_type: 'bottom_up' | 'top_down' | 'multi_thread' | null;
+  user_id: string;
+  strategy_type: string | null;
   strategy_justification: string | null;
   weeks: ActionWeek[];
   created_at: string;
@@ -92,17 +92,10 @@ export interface UserCredits {
   period_end: string;
 }
 
+// État de l'analyse progressive (utilisé par Search.tsx)
 export interface AnalysisState {
-  status:
-    | 'idle'
-    | 'loading'
-    | 'step1_research'
-    | 'step2_analysis'
-    | 'step3_contacts'
-    | 'step4_plan'
-    | 'step5_messages'
-    | 'completed'
-    | 'error';
+  status: 'idle' | 'loading' | 'analyzing' | 'completed' | 'error';
+  accountId: string | null;
   account: AccountAnalysis | null;
   contacts: Contact[];
   angles: AttackAngle[];

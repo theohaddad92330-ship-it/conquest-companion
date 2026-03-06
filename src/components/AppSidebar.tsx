@@ -6,7 +6,6 @@ import { useNavigate } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { credits as mockCredits, creditsPercentage as mockCreditsPercentage } from "@/lib/credits";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
 import { useCredits } from "@/hooks/useCredits";
@@ -36,12 +35,8 @@ const bottomNav = [
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
-  const { credits } = useCredits();
-  const remaining = credits ? Math.max(credits.accounts_limit - credits.accounts_used, 0) : mockCredits.total - mockCredits.used;
-  const total = credits?.accounts_limit ?? mockCredits.total;
-  const percent = credits
-    ? Math.round(((credits.accounts_used ?? 0) / Math.max(credits.accounts_limit, 1)) * 100)
-    : mockCreditsPercentage();
+  const { credits: userCredits, usagePercent, remaining } = useCredits();
+  const total = userCredits?.accounts_limit ?? 3;
   const { signOut, user } = useAuth();
   const { profile } = useProfile();
   const navigate = useNavigate();
@@ -165,7 +160,7 @@ export function AppSidebar() {
               </div>
               <span className="text-xs font-mono font-semibold text-foreground">{remaining}/{total}</span>
             </div>
-            <Progress value={percent} className="h-1.5" />
+            <Progress value={usagePercent} className="h-1.5" />
           </div>
         )}
       </SidebarFooter>

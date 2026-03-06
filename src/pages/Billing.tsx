@@ -5,7 +5,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { credits as mockCredits, creditsPercentage as mockCreditsPercentage, contactsPercentage as mockContactsPercentage } from "@/lib/credits";
 import { useToast } from "@/hooks/use-toast";
 import { useCredits } from "@/hooks/useCredits";
 
@@ -19,20 +18,14 @@ const history = [
 
 export default function Billing() {
   const { toast } = useToast();
-  const { credits } = useCredits();
+  const { credits, usagePercent, contactsPercent } = useCredits();
 
-  const plan = credits?.plan || mockCredits.plan.toLowerCase();
-  const used = credits?.accounts_used ?? mockCredits.used;
-  const total = credits?.accounts_limit ?? mockCredits.total;
-  const contactsUsed = credits?.contacts_enriched ?? mockCredits.contactsUsed;
-  const contactsTotal = credits?.contacts_limit ?? mockCredits.contactsTotal;
-  const renewDate = credits?.period_end ? new Date(credits.period_end).toLocaleDateString("fr-FR") : mockCredits.renewalDate;
-  const accountsPercent = credits
-    ? Math.round((used / Math.max(total, 1)) * 100)
-    : mockCreditsPercentage();
-  const contactsPercent = credits
-    ? Math.round((contactsUsed / Math.max(contactsTotal, 1)) * 100)
-    : mockContactsPercentage();
+  const plan = credits?.plan || "free";
+  const used = credits?.accounts_used ?? 0;
+  const total = credits?.accounts_limit ?? 3;
+  const contactsUsed = credits?.contacts_enriched ?? 0;
+  const contactsTotal = credits?.contacts_limit ?? 50;
+  const renewDate = credits?.period_end ? new Date(credits.period_end).toLocaleDateString("fr-FR") : "1er du mois prochain";
 
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-6">

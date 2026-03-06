@@ -4,7 +4,6 @@ import { Clock, Building2, Calendar } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { PriorityBadge } from "@/components/PriorityBadge";
-import { savedAccounts } from "@/lib/mock-data";
 import { EmptyState } from "@/components/EmptyState";
 import { useAccounts } from "@/hooks/useAccounts";
 
@@ -14,8 +13,7 @@ export default function History() {
   const navigate = useNavigate();
   const { accounts } = useAccounts();
 
-  const displayAccounts = accounts.length > 0 ? accounts : savedAccounts;
-  const sorted = [...displayAccounts].sort(
+  const sorted = [...accounts].sort(
     (a: any, b: any) => new Date(b.created_at ?? b.createdAt).getTime() - new Date(a.created_at ?? a.createdAt).getTime()
   );
 

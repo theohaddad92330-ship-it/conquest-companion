@@ -2,8 +2,6 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Coins, ChevronRight, User, LogOut, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { credits as mockCredits } from "@/lib/credits";
-import { savedAccounts } from "@/lib/mock-data";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
 import { useCredits } from "@/hooks/useCredits";
@@ -30,9 +28,8 @@ const routeLabels: Record<string, string> = {
 export function Topbar() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { credits } = useCredits();
+  const { credits, remaining } = useCredits();
   const { accounts } = useAccounts();
-  const remaining = credits ? Math.max(credits.accounts_limit - credits.accounts_used, 0) : mockCredits.total - mockCredits.used;
   const { signOut, user } = useAuth();
   const { profile } = useProfile();
 
@@ -40,7 +37,7 @@ export function Topbar() {
   const accountMatch = location.pathname.match(/^\/accounts\/(.+)$/);
   if (accountMatch) {
     const accountId = accountMatch[1];
-    const account = (accounts.length > 0 ? accounts : savedAccounts).find((a: any) => a.id === accountId);
+    const account = accounts.find((a: any) => a.id === accountId);
     currentLabel = account ? (account.company_name ?? account.companyName) : "Détail compte";
   }
 

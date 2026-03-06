@@ -52,7 +52,7 @@ export default function SearchPage() {
   const handleSearch = useCallback(async () => {
     const trimmed = query.trim();
     if (!trimmed) return;
-    startAnalysis(trimmed);
+    await startAnalysis(trimmed);
   }, [query, startAnalysis]);
 
   useEffect(() => {
@@ -68,6 +68,12 @@ export default function SearchPage() {
 
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === "Enter") handleSearch(); };
   const isIdle = analysis.status === "idle";
+
+  useEffect(() => {
+    if (analysis.status === "completed" && analysis.accountId) {
+      navigate(`/accounts/${analysis.accountId}`);
+    }
+  }, [analysis.status, analysis.accountId, navigate]);
 
   return (
     <div className="flex flex-col h-full">
