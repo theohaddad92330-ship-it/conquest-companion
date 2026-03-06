@@ -20,11 +20,11 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (!user) return <Navigate to="/login" replace />;
 
-  // Allow access to welcome and onboarding pages even if onboarding not completed
+  // Pages autorisées sans avoir terminé le questionnaire
   const isOnboardingFlow = ["/welcome", "/onboarding"].includes(location.pathname);
 
-  // If onboarding not completed and not on onboarding flow, redirect
-  if (profile && !profile.onboarding_completed && !isOnboardingFlow) {
+  // Accès au dashboard (et autres pages app) uniquement après onboarding complété
+  if (profile && profile.onboarding_completed === false && !isOnboardingFlow) {
     return <Navigate to="/onboarding" replace />;
   }
 

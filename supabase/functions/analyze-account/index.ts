@@ -12,6 +12,7 @@ const BRAVE_API_KEY = Deno.env.get('BRAVE_API_KEY') || ''
 const FIRECRAWL_API_KEY = Deno.env.get('FIRECRAWL_API_KEY') || ''
 const PAPPERS_API_KEY = Deno.env.get('PAPPERS_API_KEY') || ''
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
+const APIFY_API_TOKEN = Deno.env.get('APIFY_API_TOKEN') || ''
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
@@ -27,17 +28,22 @@ serve(async (req) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''))
     if (authError || !user) throw new Error('Non authentifié')
 
-    const { companyName, userContext } = await req.json()
-    if (!companyName) throw new Error('companyName requis')
+    const body = await req.json()
+    const companyName = typeof body?.companyName === 'string' ? body.companyName.trim() : ''
+    const userContext = typeof body?.userContext === 'string' ? body.userContext.slice(0, 2000) : null
 
-    // Vérifier les crédits
-    const { data: credits } = await supabase
-      .from('user_credits')
-      .select('*')
-      .eq('user_id', user.id)
-      .single()
-    
-    if (credits && credits.accounts_used >= credits.accounts_limit) {
+    if (!companyName) throw new Error('companyName requis')
+    if (companyName.length > 200) throw new Error('companyName trop long')
+
+    // Vérifier le rate limit (anti-spam)
+    const { data: rateLimitOk } = await supabase.rpc('check_rate_limit', { p_user_id: user.id, p_max_per_hour: 10 })
+    if (rateLimitOk === false) {
+      throw new Error('Trop de recherches en peu de temps. Attendez quelques minutes.')
+    }
+
+    // Vérifier ET consommer un crédit en une seule transaction
+    const { data: creditOk } = await supabase.rpc('check_and_increment_accounts_used', { p_user_id: user.id })
+    if (creditOk === false) {
       throw new Error('Limite de crédits atteinte. Passez à un plan supérieur.')
     }
 
@@ -67,8 +73,9 @@ serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   } catch (error: any) {
+    const message = error?.message && typeof error.message === 'string' ? error.message : 'Erreur serveur'
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: message }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }
@@ -78,18 +85,28 @@ serve(async (req) => {
 // CHAÎNE D'ORCHESTRATION PRINCIPALE
 // ============================================
 async function processAnalysis(supabase: any, accountId: string, userId: string, companyName: string, userContext: string | null, onboardingData: any) {
+  const traceId = crypto.randomUUID().slice(0, 8)
+  console.log(JSON.stringify({ event: 'analysis_start', traceId, accountId, companyName, userId }))
+
   try {
     // ÉTAPE 1 — Recherche web
     const braveResults = await searchBrave(companyName)
+    console.log(JSON.stringify({ event: 'brave_done', traceId, resultsCount: braveResults.results?.length || 0 }))
 
     // ÉTAPE 2 — Scraping pages
     const scrapedContent = await scrapePages(braveResults.urls?.slice(0, 5) || [])
+    console.log(JSON.stringify({ event: 'firecrawl_done', traceId, contentLength: scrapedContent.length }))
 
     // ÉTAPE 3 — Données entreprise FR
     const pappersData = await searchPappers(companyName)
+    console.log(JSON.stringify({ event: 'pappers_done', traceId, found: !!pappersData }))
+
+    // Récupérer le contexte RAG
+    const ragContext = await searchRAG(supabase, companyName)
 
     // ÉTAPE 4 — Analyse IA complète (Claude)
-    const analysis = await analyzeWithClaude(companyName, braveResults, scrapedContent, pappersData, userContext, onboardingData)
+    const analysis = await analyzeWithClaude(companyName, braveResults, scrapedContent, pappersData, userContext, onboardingData, ragContext)
+    console.log(JSON.stringify({ event: 'claude_done', traceId, contactsCount: analysis.contacts?.length || 0, anglesCount: analysis.angles?.length || 0 }))
 
     // Sauvegarder le compte enrichi
     await supabase.from('accounts').update({
@@ -104,13 +121,52 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
       priority_score: analysis.priorityScore || 5,
       priority_justification: analysis.priorityJustification,
       raw_analysis: analysis,
-      status: 'completed',
+      status: 'analyzing',
     }).eq('id', accountId)
 
-    // Sauvegarder les contacts
-    if (analysis.contacts?.length > 0) {
+    // ===== ÉTAPE 5 — SCRAPING LINKEDIN (Apify) =====
+    let finalContacts: any[] = []
+
+    if (APIFY_API_TOKEN) {
+      // 5a. Scraper la page entreprise (infos complémentaires)
+      const companyData = await scrapeLinkedInCompany(companyName)
+      
+      // Si on a des infos complémentaires, mettre à jour le compte
+      if (companyData) {
+        const updates: any = {}
+        if (companyData.employeeCount && !analysis.employees) {
+          updates.employees = `~${companyData.employeeCount} collaborateurs`
+        }
+        if (Object.keys(updates).length > 0) {
+          await supabase.from('accounts').update(updates).eq('id', accountId)
+        }
+      }
+
+      // 5b. Scraper les contacts LinkedIn
+      const linkedinContacts = await scrapeLinkedInPeople(companyName, onboardingData, 100)
+
+      if (linkedinContacts.length > 0) {
+        // 5c. Enrichir les contacts LinkedIn avec Claude (rôles, priorités, messages)
+        finalContacts = await enrichLinkedInContactsWithClaude(
+          linkedinContacts,
+          companyName,
+          analysis,
+          onboardingData
+        )
+      } else {
+        // Fallback : utiliser les contacts générés par l'analyse IA initiale
+        finalContacts = analysis.contacts || []
+      }
+      console.log(JSON.stringify({ event: 'apify_done', traceId, linkedinContactsCount: finalContacts.length }))
+    } else {
+      // Pas d'Apify : utiliser les contacts IA
+      finalContacts = analysis.contacts || []
+    }
+
+    // Sauvegarder les contacts (vrais LinkedIn ou IA)
+    if (finalContacts.length > 0) {
       await supabase.from('contacts').insert(
-        analysis.contacts.map((c: any, i: number) => ({
+        finalContacts.map((c: any, i: number) => ({
           account_id: accountId,
           user_id: userId,
           full_name: c.name || `Contact ${i + 1}`,
@@ -126,7 +182,7 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
           email_message: c.emailMessage || null,
           linkedin_message: c.linkedinMessage || null,
           followup_message: c.followupMessage || null,
-          source: 'ai_generated',
+          source: APIFY_API_TOKEN ? 'linkedin_apify' : 'ai_generated',
         }))
       )
     }
@@ -157,10 +213,21 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
       })
     }
 
-    // Incrémenter les crédits
-    await supabase.rpc('increment_accounts_used', { p_user_id: userId })
+    // Estimation grossière des coûts après l'analyse
+    const estimatedCost = 0.003 * (scrapedContent.length / 1000)
+      + 0.005 * (braveResults.results?.length || 0)
+      + 0.1
+      + (APIFY_API_TOKEN ? 3.0 : 0)
 
+    // Marquer le compte comme terminé + coût API
+    await supabase.from('accounts').update({
+      status: 'completed',
+      api_cost_euros: estimatedCost,
+    }).eq('id', accountId)
+
+    console.log(JSON.stringify({ event: 'analysis_complete', traceId, accountId }))
   } catch (error: any) {
+    console.error(JSON.stringify({ event: 'analysis_error', traceId, accountId, error: error.message }))
     await supabase.from('accounts').update({
       status: 'error',
       error_message: error.message,
@@ -213,11 +280,23 @@ async function searchPappers(companyName: string) {
   } catch { return null }
 }
 
+async function searchRAG(supabase: any, _query: string, category?: string): Promise<string> {
+  try {
+    let q = supabase.from('rag_documents').select('title, content, category').limit(5)
+    if (category) q = q.eq('category', category)
+    const { data } = await q
+    if (!data || data.length === 0) return ''
+    return data.map((doc: any) => `--- ${doc.title} (${doc.category}) ---\n${doc.content}`).join('\n\n')
+  } catch {
+    return ''
+  }
+}
+
 // ============================================
 // ANALYSE IA AVEC CLAUDE
 // ============================================
 
-async function analyzeWithClaude(companyName: string, braveResults: any, scrapedContent: string, pappersData: any, userContext: string | null, onboardingData: any) {
+async function analyzeWithClaude(companyName: string, braveResults: any, scrapedContent: string, pappersData: any, userContext: string | null, onboardingData: any, ragContext: string) {
   // Si pas de clé API Claude → mode fallback avec données de démo
   if (!ANTHROPIC_API_KEY) {
     return generateFallbackAnalysis(companyName, onboardingData)
@@ -245,9 +324,16 @@ RÈGLES :
 - Tous les textes en français.
 - Personnalise les angles et messages par rapport aux offres de l'ESN.
 - Les contacts doivent être des profils fictifs mais réalistes pour ce type d'entreprise.
-- Les messages doivent être professionnels, personnalisés, et mentionner les offres de l'ESN.`
+- Les messages doivent être professionnels, personnalisés, et mentionner les offres de l'ESN.
+
+RÈGLES SUR LE NOM DE L'ENTREPRISE :
+- Si le nom saisi contient une faute d'orthographe évidente, corrige-le (ex : "Societe Generale" → "Société Générale", "Capgeminni" → "Capgemini", "bnp" → "BNP Paribas").
+- Si le nom est ambigu et peut correspondre à plusieurs entreprises, choisis la plus grande ou la plus connue.
+- Indique TOUJOURS le nom exact et correct dans le champ "companyNameCorrected".
+- Si tu ne trouves AUCUNE entreprise correspondante dans les données fournies, mets "notFound": true et propose 2-3 suggestions dans "suggestions".`
 
   const userPrompt = `Analyse le compte "${companyName}".
+${ragContext ? `\nBASE DE CONNAISSANCES ESN :\n${ragContext}\n` : ''}
 
 DONNÉES WEB :
 ${JSON.stringify(braveResults.results?.slice(0, 5), null, 2)}
@@ -260,6 +346,9 @@ ${JSON.stringify(pappersData, null, 2)}
 
 Produis un JSON avec EXACTEMENT cette structure :
 {
+  "companyNameCorrected": "Nom exact et correct de l'entreprise",
+  "notFound": false,
+  "suggestions": [],
   "sector": "Secteur d'activité",
   "employees": "Nombre approximatif",
   "revenue": "CA approximatif",
@@ -326,7 +415,285 @@ Génère 5-8 contacts, 3 angles, et un plan de 4 semaines.`
   const data = await res.json()
   const text = data.content?.[0]?.text || '{}'
   const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-  return JSON.parse(clean)
+
+  let parsed: any
+  try {
+    parsed = JSON.parse(clean)
+  } catch (parseError) {
+    console.error('Claude JSON parse error:', parseError)
+    console.error('Raw response:', text.slice(0, 500))
+    return generateFallbackAnalysis(companyName, onboardingData)
+  }
+
+  if (!parsed.sector && !parsed.itChallenges && !parsed.contacts) {
+    console.error('Claude response missing critical fields:', Object.keys(parsed))
+    return generateFallbackAnalysis(companyName, onboardingData)
+  }
+
+  parsed.subsidiaries = Array.isArray(parsed.subsidiaries) ? parsed.subsidiaries : []
+  parsed.itChallenges = Array.isArray(parsed.itChallenges) ? parsed.itChallenges : []
+  parsed.recentSignals = Array.isArray(parsed.recentSignals) ? parsed.recentSignals : []
+  parsed.contacts = Array.isArray(parsed.contacts) ? parsed.contacts : []
+  parsed.angles = Array.isArray(parsed.angles) ? parsed.angles : []
+  parsed.priorityScore = Math.min(10, Math.max(1, parseInt(parsed.priorityScore) || 5))
+
+  if (parsed.actionPlan && !Array.isArray(parsed.actionPlan.weeks)) {
+    parsed.actionPlan.weeks = []
+  }
+
+  parsed.companyNameCorrected = parsed.companyNameCorrected || companyName
+  parsed.notFound = !!parsed.notFound
+  parsed.suggestions = Array.isArray(parsed.suggestions) ? parsed.suggestions : []
+
+  return parsed
+}
+
+// ============================================
+// SCRAPING LINKEDIN VIA APIFY
+// ============================================
+
+/**
+ * Étape 4a — Scraper la page entreprise LinkedIn
+ * Récupère : description, nombre d'employés, filiales, spécialités
+ */
+async function scrapeLinkedInCompany(companyName: string): Promise<any> {
+  if (!APIFY_API_TOKEN) return null
+  try {
+    const actorId = 'curious_coder~linkedin-company-scraper'
+    
+    const runRes = await fetch(`https://api.apify.com/v2/acts/${actorId}/runs?token=${APIFY_API_TOKEN}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        queries: [companyName],
+        maxResults: 1,
+      }),
+    })
+    const runData = await runRes.json()
+    const runId = runData?.data?.id
+    if (!runId) return null
+
+    let status = 'RUNNING'
+    let attempts = 0
+    while (status === 'RUNNING' && attempts < 30) {
+      await new Promise(r => setTimeout(r, 3000))
+      const statusRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${APIFY_API_TOKEN}`)
+      const statusData = await statusRes.json()
+      status = statusData?.data?.status || 'FAILED'
+      attempts++
+    }
+
+    if (status !== 'SUCCEEDED') return null
+
+    const datasetRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${APIFY_API_TOKEN}`)
+    const items = await datasetRes.json()
+    return items?.[0] || null
+  } catch (error) {
+    console.error('Apify company scrape error:', error)
+    return null
+  }
+}
+
+/**
+ * Étape 4b — Scraper les contacts LinkedIn du compte
+ */
+async function scrapeLinkedInPeople(
+  companyName: string,
+  onboardingData: any,
+  maxContacts: number = 100
+): Promise<any[]> {
+  if (!APIFY_API_TOKEN) return []
+  try {
+    const personas = onboardingData.personas || ['DSI / CTO', 'Directeur de projet', 'Achats IT']
+    const excludedPersonas = onboardingData.excludedPersonas || ['Stagiaires', 'Marketing']
+    
+    const searchQueries = personas.map((persona: string) => {
+      const cleanPersona = persona
+        .replace('DSI / CTO', 'DSI OR CTO OR "Directeur des Systèmes"')
+        .replace('Directeur de projet', '"Directeur de projet" OR "Chef de projet"')
+        .replace('Achats IT', '"Achats IT" OR "Directeur Achats"')
+        .replace('CDO / Data', 'CDO OR "Chief Data" OR "Head of Data"')
+        .replace('RSSI / Cyber', 'RSSI OR "Responsable Sécurité" OR CISO')
+        .replace('DRH', 'DRH OR "Directeur RH"')
+        .replace('Opérationnels IT', '"Responsable IT" OR "Manager IT" OR "Lead technique"')
+        .replace('DAF', 'DAF OR "Directeur Financier" OR CFO')
+      return `${cleanPersona} ${companyName}`
+    })
+
+    const actorId = 'curious_coder~linkedin-people-search'
+
+    const runRes = await fetch(`https://api.apify.com/v2/acts/${actorId}/runs?token=${APIFY_API_TOKEN}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        queries: searchQueries,
+        maxResults: Math.ceil(maxContacts / Math.max(searchQueries.length, 1)),
+      }),
+    })
+    const runData = await runRes.json()
+    const runId = runData?.data?.id
+    if (!runId) return []
+
+    let status = 'RUNNING'
+    let attempts = 0
+    while (status === 'RUNNING' && attempts < 60) {
+      await new Promise(r => setTimeout(r, 3000))
+      const statusRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${APIFY_API_TOKEN}`)
+      const statusData = await statusRes.json()
+      status = statusData?.data?.status || 'FAILED'
+      attempts++
+    }
+
+    if (status !== 'SUCCEEDED') return []
+
+    const datasetRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${APIFY_API_TOKEN}`)
+    const items: any[] = await datasetRes.json()
+
+    const filtered = items.filter((item: any) => {
+      const title = (item.title || item.headline || '').toLowerCase()
+      const isExcluded = excludedPersonas.some((excluded: string) =>
+        title.includes(excluded.toLowerCase())
+      )
+      if (isExcluded) return false
+      if (title.includes('stagiaire') || title.includes('intern') || title.includes('alternant') || title.includes('apprenti')) return false
+      return true
+    })
+
+    const seen = new Set<string>()
+    const unique = filtered.filter((item: any) => {
+      const name = (item.fullName || item.name || '').toLowerCase()
+      if (!name) return false
+      if (seen.has(name)) return false
+      seen.add(name)
+      return true
+    })
+
+    return unique.slice(0, maxContacts)
+  } catch (error) {
+    console.error('Apify people search error:', error)
+    return []
+  }
+}
+
+/**
+ * Étape 4c — Mapper les contacts LinkedIn vers le format Bellum
+ * + Demander à Claude de les enrichir (rôle décisionnel, priorité, pourquoi les contacter)
+ */
+async function enrichLinkedInContactsWithClaude(
+  linkedinContacts: any[],
+  companyName: string,
+  accountAnalysis: any,
+  onboardingData: any
+): Promise<any[]> {
+  if (!ANTHROPIC_API_KEY || linkedinContacts.length === 0) {
+    return linkedinContacts.map((c, i) => ({
+      name: c.fullName || c.name || `Contact ${i + 1}`,
+      title: c.title || c.headline || null,
+      entity: c.company || companyName,
+      role: 'unknown',
+      priority: 3,
+      summary: c.summary || c.headline || null,
+      whyContact: null,
+      email: c.email || null,
+      phone: c.phone || null,
+      linkedin: c.linkedinUrl || c.profileUrl || c.url || null,
+      emailMessage: null,
+      linkedinMessage: null,
+      followupMessage: null,
+    }))
+  }
+
+  const systemPrompt = `Tu es un expert en intelligence commerciale ESN.
+Tu reçois une liste de contacts LinkedIn d'un compte cible.
+Tu dois pour chaque contact :
+1. Déterminer son rôle décisionnel (sponsor, champion, operational, purchasing, blocker, influencer)
+2. Attribuer une priorité (1 = haute, 5 = basse)
+3. Expliquer pourquoi le contacter
+4. Générer un message email personnalisé
+5. Générer un message LinkedIn personnalisé
+6. Générer un message de relance
+
+PROFIL DE L'ESN :
+- Offres : ${JSON.stringify(onboardingData.offers || [])}
+- Secteurs : ${JSON.stringify(onboardingData.sectors || [])}
+- TJM : ${onboardingData.avgTJM || 'Non renseigné'}
+
+ANALYSE DU COMPTE :
+- Enjeux IT : ${JSON.stringify(accountAnalysis.itChallenges || [])}
+- Signaux récents : ${JSON.stringify(accountAnalysis.recentSignals || [])}
+- Angles d'attaque : ${JSON.stringify(accountAnalysis.angles?.map((a: any) => a.title) || [])}
+
+Réponds UNIQUEMENT en JSON valide, un tableau d'objets.`
+
+  const contactsList = linkedinContacts.slice(0, 30).map(c => ({
+    name: c.fullName || c.name,
+    title: c.title || c.headline,
+    company: c.company || companyName,
+    linkedin: c.linkedinUrl || c.profileUrl || c.url,
+    summary: c.summary,
+  }))
+
+  const userPrompt = `Enrichis ces ${contactsList.length} contacts LinkedIn pour le compte "${companyName}" :
+
+${JSON.stringify(contactsList, null, 2)}
+
+Retourne un tableau JSON :
+[
+  {
+    "name": "Prénom Nom",
+    "title": "Poste",
+    "entity": "BU/Filiale",
+    "role": "sponsor",
+    "priority": 1,
+    "summary": "Résumé",
+    "whyContact": "Pourquoi",
+    "email": null,
+    "phone": null,
+    "linkedin": "url",
+    "emailMessage": {"subject": "Objet", "body": "Corps"},
+    "linkedinMessage": "Message court",
+    "followupMessage": {"subject": "RE: Objet", "body": "Relance"}
+  }
+]`
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 8000,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+      }),
+    })
+
+    const data = await res.json()
+    const text = data.content?.[0]?.text || '[]'
+    const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+    return JSON.parse(clean)
+  } catch (error) {
+    console.error('Claude enrichment error:', error)
+    return linkedinContacts.map((c, i) => ({
+      name: c.fullName || c.name || `Contact ${i + 1}`,
+      title: c.title || c.headline || null,
+      entity: c.company || companyName,
+      role: 'unknown',
+      priority: 3,
+      summary: c.summary || null,
+      whyContact: null,
+      email: null,
+      phone: null,
+      linkedin: c.linkedinUrl || c.profileUrl || c.url || null,
+      emailMessage: null,
+      linkedinMessage: null,
+      followupMessage: null,
+    }))
+  }
 }
 
 // ============================================

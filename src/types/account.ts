@@ -103,4 +103,8 @@ export interface AnalysisState {
   progress: number;
   currentStep: string;
   error: string | null;
+  correctedName: string | null;
+  originalQuery: string | null;
+  notFound: boolean;
+  alternativeSuggestions: string[];
 }

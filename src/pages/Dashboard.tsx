@@ -14,6 +14,7 @@ import {
   Zap,
   Target,
   Sparkles,
+  AlertTriangle,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useCredits } from "@/hooks/useCredits";
 import { EmptyState } from "@/components/EmptyState";
@@ -56,9 +58,38 @@ export default function Dashboard() {
   const [query, setQuery] = useState("");
   const { user } = useAuth();
   const { profile } = useProfile();
-  const { accounts } = useAccounts();
-  const { credits: userCredits, usagePercent, remaining } = useCredits();
+  const { accounts, isLoading: accountsLoading, error: accountsError } = useAccounts();
+  const { credits: userCredits, usagePercent, remaining, isLoading: creditsLoading } = useCredits();
   const firstName = profile?.full_name?.split(" ")[0] || user?.user_metadata?.full_name?.split(" ")[0] || user?.user_metadata?.name?.split(" ")[0] || "";
+
+  if (accountsLoading || creditsLoading) {
+    return (
+      <div className="p-6 max-w-6xl mx-auto space-y-6">
+        <div className="space-y-4">
+          <Skeleton className="h-8 w-48" />
+          <Skeleton className="h-12 w-full" />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-28 rounded-lg" />)}
+          </div>
+          <Skeleton className="h-64 w-full rounded-lg" />
+        </div>
+      </div>
+    );
+  }
+
+  if (accountsError) {
+    return (
+      <div className="p-6 max-w-6xl mx-auto">
+        <Card className="border-destructive/50">
+          <CardContent className="p-6 text-center space-y-3">
+            <AlertTriangle className="h-8 w-8 text-destructive mx-auto" />
+            <p className="text-sm text-destructive">Impossible de charger vos données.</p>
+            <Button variant="outline" size="sm" onClick={() => window.location.reload()}>Réessayer</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   const handleSearch = () => {
     if (query.trim()) navigate(`/search?q=${encodeURIComponent(query.trim())}`);

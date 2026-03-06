@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { useToast } from "@/hooks/use-toast";
 import { useAccounts } from "@/hooks/useAccounts";
@@ -24,7 +25,7 @@ const PAGE_SIZE = 7;
 export default function Accounts() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { accounts, isLoading } = useAccounts();
+  const { accounts, isLoading, error } = useAccounts();
   const [search, setSearch] = useState("");
   const [sectorFilter, setSectorFilter] = useState("all");
   const [scoreFilter, setScoreFilter] = useState("all");
@@ -75,8 +76,19 @@ export default function Accounts() {
 
   if (isLoading) {
     return (
-      <div className="p-6 max-w-5xl mx-auto">
-        <p className="text-sm text-muted-foreground">Chargement des comptes...</p>
+      <div className="p-6 max-w-5xl mx-auto space-y-4">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-10 w-full" />
+        {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-12 w-full" />)}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6 max-w-5xl mx-auto text-center space-y-3">
+        <p className="text-sm text-destructive">Erreur de chargement des comptes.</p>
+        <Button variant="outline" size="sm" onClick={() => window.location.reload()}>Réessayer</Button>
       </div>
     );
   }

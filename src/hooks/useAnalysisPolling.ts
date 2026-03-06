@@ -17,6 +17,10 @@ export function useAnalysisPolling() {
     progress: 0,
     currentStep: '',
     error: null,
+    correctedName: null,
+    originalQuery: null,
+    notFound: false,
+    alternativeSuggestions: [],
   });
 
   const stopPolling = useCallback(() => {
@@ -26,8 +30,28 @@ export function useAnalysisPolling() {
     }
   }, []);
 
+  const resetState = useCallback(() => {
+    stopPolling();
+    setState({
+      status: 'idle',
+      accountId: null,
+      account: null,
+      contacts: [],
+      angles: [],
+      actionPlan: null,
+      progress: 0,
+      currentStep: '',
+      error: null,
+      correctedName: null,
+      originalQuery: null,
+      notFound: false,
+      alternativeSuggestions: [],
+    });
+  }, [stopPolling]);
+
   const startAnalysis = useCallback(async (companyName: string, userContext?: string) => {
     stopPolling();
+    const trimmedName = companyName.trim();
     setState({
       status: 'loading',
       accountId: null,
@@ -38,12 +62,15 @@ export function useAnalysisPolling() {
       progress: 5,
       currentStep: 'Lancement de l\'analyse...',
       error: null,
+      originalQuery: trimmedName,
+      correctedName: null,
+      notFound: false,
+      alternativeSuggestions: [],
     });
 
     try {
-      // Appeler l'Edge Function
       const { data, error } = await supabase.functions.invoke('analyze-account', {
-        body: { companyName, userContext },
+        body: { companyName: trimmedName, userContext },
       });
 
       if (error) throw error;
@@ -102,27 +129,36 @@ export function useAnalysisPolling() {
           let currentStep = 'Recherche web en cours...';
 
           if (account.sector) {
-            progress = 40;
-            currentStep = 'Fiche compte prête — Identification des contacts...';
+            progress = 30;
+            currentStep = 'Fiche compte prête — Scraping LinkedIn en cours...';
           }
           if (contacts && contacts.length > 0) {
-            progress = 65;
-            currentStep = 'Contacts identifiés — Préparation du plan d\'attaque...';
+            progress = 60;
+            currentStep = 'Contacts identifiés — Enrichissement en cours...';
           }
           if (angles && angles.length > 0) {
             progress = 80;
             currentStep = 'Plan d\'attaque prêt — Génération des messages...';
           }
+          let correctedName: string | null = null;
+          let notFound = false;
+          let alternativeSuggestions: string[] = [];
+          if (account.status === 'completed' && account.raw_analysis) {
+            const raw = account.raw_analysis as { companyNameCorrected?: string; notFound?: boolean; suggestions?: string[] };
+            correctedName = raw.companyNameCorrected || null;
+            notFound = !!raw.notFound;
+            alternativeSuggestions = Array.isArray(raw.suggestions) ? raw.suggestions : [];
+          }
+
           if (account.status === 'completed') {
             progress = 100;
             currentStep = 'Analyse terminée !';
             stopPolling();
-            // Invalider les caches pour que le dashboard se mette à jour
             queryClient.invalidateQueries({ queryKey: ['accounts'] });
             queryClient.invalidateQueries({ queryKey: ['credits'] });
           }
 
-          setState({
+          setState(prev => ({
             status: account.status === 'completed' ? 'completed' : 'analyzing',
             accountId,
             account: account as AccountAnalysis,
@@ -132,7 +168,11 @@ export function useAnalysisPolling() {
             progress,
             currentStep,
             error: null,
-          });
+            originalQuery: prev.originalQuery,
+            correctedName,
+            notFound,
+            alternativeSuggestions,
+          }));
         } catch (err) {
           // Erreur de polling, on continue
           console.error('Polling error:', err);
@@ -151,135 +191,5 @@ export function useAnalysisPolling() {
     }
   }, [stopPolling, queryClient]);
 
-  return { state, startAnalysis, stopPolling };
+  return { state, startAnalysis, stopPolling, resetState };
 }
-
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
-import { analyzeAccount } from '@/lib/api';
-import { AnalysisState } from '@/types/account';
-
-export function useAnalysisPolling() {
-  const intervalRef = useRef<number | null>(null);
-  const timeoutRef = useRef<number | null>(null);
-
-  const [state, setState] = useState<AnalysisState>({
-    status: 'idle',
-    account: null,
-    contacts: [],
-    angles: [],
-    actionPlan: null,
-    progress: 0,
-    currentStep: '',
-    error: null,
-  });
-
-  useEffect(() => {
-    return () => {
-      if (intervalRef.current) window.clearInterval(intervalRef.current);
-      if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
-    };
-  }, []);
-
-  const startAnalysis = useCallback(async (companyName: string, userContext?: string) => {
-    setState({
-      status: 'loading',
-      account: null,
-      contacts: [],
-      angles: [],
-      actionPlan: null,
-      progress: 5,
-      currentStep: "Lancement de l'analyse...",
-      error: null,
-    });
-
-    if (intervalRef.current) window.clearInterval(intervalRef.current);
-    if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
-
-    try {
-      const { accountId } = await analyzeAccount(companyName, userContext);
-
-      setState((prev) => ({
-        ...prev,
-        status: 'step1_research',
-        progress: 15,
-        currentStep: 'Recherche web en cours...',
-      }));
-
-      intervalRef.current = window.setInterval(async () => {
-        const { data: account } = await supabase.from('accounts').select('*').eq('id', accountId).single();
-        if (!account) return;
-
-        if (account.status === 'error') {
-          if (intervalRef.current) window.clearInterval(intervalRef.current);
-          setState((prev) => ({
-            ...prev,
-            status: 'error',
-            error: account.error_message || 'Erreur pendant analyse',
-          }));
-          return;
-        }
-
-        const { data: contacts } = await supabase
-          .from('contacts')
-          .select('*')
-          .eq('account_id', accountId)
-          .order('priority');
-
-        const { data: angles } = await supabase
-          .from('attack_angles')
-          .select('*')
-          .eq('account_id', accountId)
-          .order('rank');
-
-        const { data: plans } = await supabase.from('action_plans').select('*').eq('account_id', accountId);
-
-        let progress = 15;
-        let currentStep = 'Recherche web en cours...';
-        let status: AnalysisState['status'] = 'step1_research';
-
-        if (account.sector) {
-          progress = 40;
-          currentStep = 'Fiche compte prête — Identification des contacts...';
-          status = 'step2_analysis';
-        }
-        if (contacts && contacts.length > 0) {
-          progress = 65;
-          currentStep = "Contacts identifiés — Préparation du plan d'attaque...";
-          status = 'step3_contacts';
-        }
-        if (angles && angles.length > 0) {
-          progress = 80;
-          currentStep = "Plan d'attaque prêt — Génération des messages...";
-          status = 'step4_plan';
-        }
-        if (account.status === 'completed') {
-          progress = 100;
-          currentStep = 'Analyse terminée !';
-          status = 'completed';
-          if (intervalRef.current) window.clearInterval(intervalRef.current);
-        }
-
-        setState({
-          status,
-          account,
-          contacts: contacts || [],
-          angles: angles || [],
-          actionPlan: plans?.[0] || null,
-          progress,
-          currentStep,
-          error: null,
-        });
-      }, 2000);
-
-      timeoutRef.current = window.setTimeout(() => {
-        if (intervalRef.current) window.clearInterval(intervalRef.current);
-      }, 300000);
-    } catch (error: any) {
-      setState((prev) => ({ ...prev, status: 'error', error: error?.message || 'Erreur inconnue' }));
-    }
-  }, []);
-
-  return { state, startAnalysis };
-}
-

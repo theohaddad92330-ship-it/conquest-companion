@@ -1,6 +1,6 @@
 import {
   Search, Building2, LayoutDashboard, Clock, Settings,
-  Coins, HelpCircle, LogOut, Zap, Users,
+  Coins, HelpCircle, LogOut, Zap, Users, BookOpen,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
@@ -25,6 +25,7 @@ const mainNav = [
 
 const settingsNav = [
   { title: "Mon profil ESN", url: "/profile", icon: Settings },
+  { title: "Base de connaissances", url: "/knowledge", icon: BookOpen },
   { title: "Crédits & plan", url: "/billing", icon: Coins },
 ];
 
@@ -158,9 +159,11 @@ export function AppSidebar() {
                 <Coins className="h-3.5 w-3.5 text-primary" />
                 <span className="text-xs text-muted-foreground">Crédits</span>
               </div>
-              <span className="text-xs font-mono font-semibold text-foreground">{remaining}/{total}</span>
+              <span className="text-xs font-mono font-semibold text-foreground">
+                {userCredits ? `${remaining}/${userCredits.accounts_limit}` : "—"}
+              </span>
             </div>
-            <Progress value={usagePercent} className="h-1.5" />
+            <Progress value={userCredits ? usagePercent : 0} className="h-1.5" />
           </div>
         )}
       </SidebarFooter>

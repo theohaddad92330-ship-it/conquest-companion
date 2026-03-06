@@ -16,6 +16,7 @@ export default function Login() {
   const { toast } = useToast();
   const navigate = useNavigate();
 
+  // Redirection selon onboarding : /onboarding si questionnaire non fait, sinon /dashboard
   const redirectAfterLogin = async (userId: string) => {
     const { data } = await supabase
       .from("profiles")
@@ -23,7 +24,7 @@ export default function Login() {
       .eq("user_id", userId)
       .maybeSingle();
 
-    if (data && !data.onboarding_completed) {
+    if (data && data.onboarding_completed === false) {
       navigate("/onboarding");
     } else {
       navigate("/dashboard");

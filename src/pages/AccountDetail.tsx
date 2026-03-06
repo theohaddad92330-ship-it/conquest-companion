@@ -16,9 +16,11 @@ import { PriorityBadge } from "@/components/PriorityBadge";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useAccount, useAccountActionPlan, useAccountAngles, useAccountContacts } from "@/hooks/useAccounts";
 import type { AccountAnalysis, Contact, AttackAngle, ActionPlan } from "@/types/account";
+import { generateCSV, downloadCSV } from "@/lib/export-csv";
 
 const fadeUp = { hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } };
 
@@ -132,7 +134,7 @@ function TabFiche({ account }: { account: AccountAnalysis }) {
   );
 }
 
-function TabContacts({ contacts }: { contacts: Contact[] }) {
+function TabContacts({ contacts, companyName }: { contacts: Contact[]; companyName: string }) {
   const { toast } = useToast();
   const [selectedContact, setSelectedContact] = useState<string | null>(null);
   const [priorityFilter, setPriorityFilter] = useState("all");
@@ -171,7 +173,12 @@ function TabContacts({ contacts }: { contacts: Contact[] }) {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => toast({ title: "Export CSV", description: `${contacts.length} contacts exportés.` })}
+            onClick={() => {
+              const csv = generateCSV(contacts, companyName);
+              const date = new Date().toISOString().split("T")[0];
+              downloadCSV(csv, `bellum_${companyName.toLowerCase().replace(/\s+/g, "_")}_contacts_${date}.csv`);
+              toast({ title: "Export CSV", description: `${contacts.length} contacts exportés.` });
+            }}
           >
             <Download className="h-3.5 w-3.5 mr-1.5" />Export CSV
           </Button>
@@ -219,6 +226,46 @@ function TabContacts({ contacts }: { contacts: Contact[] }) {
         </Table>
       </Card>
 
+      {/* Organigramme dynamique */}
+      <Card className="border-border">
+        <CardContent className="p-5 space-y-3">
+          <h3 className="font-display text-sm font-semibold">Organigramme simplifié</h3>
+          <div className="text-sm font-mono space-y-1 text-muted-foreground pl-2">
+            {(() => {
+              const byEntity = contacts.reduce((acc: Record<string, Contact[]>, c: Contact) => {
+                const entity = c.entity || "Groupe";
+                if (!acc[entity]) acc[entity] = [];
+                acc[entity].push(c);
+                return acc;
+              }, {});
+
+              return Object.entries(byEntity).map(([entity, entityContacts]) => (
+                <div key={entity} className="mb-3">
+                  <p className="text-foreground font-semibold">{entity.toUpperCase()}</p>
+                  {[...entityContacts]
+                    .sort((a, b) => a.priority - b.priority)
+                    .map((c, i) => (
+                      <p key={c.id} className="pl-4">
+                        {i === entityContacts.length - 1 ? "└──" : "├──"}{" "}
+                        {c.full_name} ({c.title}) —{" "}
+                        <Badge variant="secondary" className="text-[10px]">
+                          {c.decision_role === "sponsor" ? "Sponsor" :
+                           c.decision_role === "champion" ? "Champion" :
+                           c.decision_role === "operational" ? "Opérationnel" :
+                           c.decision_role === "purchasing" ? "Achats" :
+                           c.decision_role === "blocker" ? "Bloqueur" :
+                           c.decision_role === "influencer" ? "Influenceur" :
+                           "Inconnu"}
+                        </Badge>
+                      </p>
+                    ))}
+                </div>
+              ));
+            })()}
+          </div>
+        </CardContent>
+      </Card>
+
       <p className="text-xs text-muted-foreground text-center">Cliquer sur un contact pour voir ses détails ↓</p>
 
       {contact && (
@@ -231,7 +278,18 @@ function TabContacts({ contacts }: { contacts: Contact[] }) {
                 </div>
                 <div>
                   <p className="font-semibold">{contact.full_name} — {contact.title || "—"}, {contact.entity || "—"}</p>
-                  <Badge variant="secondary" className="text-xs mt-0.5">Rôle : {contact.decision_role || "unknown"}</Badge>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <Badge variant="secondary" className="text-xs">Rôle : {contact.decision_role || "unknown"}</Badge>
+                    {contact.source === "linkedin_apify" ? (
+                      <Badge variant="secondary" className="text-[10px] bg-blue-500/10 text-blue-400 border-blue-500/20">
+                        LinkedIn
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary" className="text-[10px] bg-primary/10 text-primary border-primary/20">
+                        IA
+                      </Badge>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="grid gap-2 text-sm">
@@ -395,7 +453,24 @@ function TabMessages({ contacts }: { contacts: Contact[] }) {
                       {m.type === "linkedin" && <><Linkedin className="h-3 w-3" />LinkedIn</>}
                       {m.type === "relance" && <><RotateCw className="h-3 w-3" />Relance J+5</>}
                     </Badge>
-                    <CopyButton text={m.subject ? `Objet : ${m.subject}\n\n${m.body}` : m.body} />
+                    <div className="flex items-center gap-1">
+                      <CopyButton text={m.subject ? `Objet : ${m.subject}\n\n${m.body}` : m.body} />
+                      {m.type === "email" && m.subject && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs gap-1 text-muted-foreground"
+                          onClick={() => {
+                            const subject = encodeURIComponent(m.subject || "");
+                            const body = encodeURIComponent(m.body || "");
+                            const email = g.contact?.email ? encodeURIComponent(g.contact.email) : "";
+                            window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${email}&su=${subject}&body=${body}`, "_blank");
+                          }}
+                        >
+                          <Mail className="h-3 w-3" />Gmail
+                        </Button>
+                      )}
+                    </div>
                   </div>
                   {m.subject && <p className="text-xs text-muted-foreground"><span className="font-semibold">Objet :</span> {m.subject}</p>}
                   <p className="text-sm text-foreground/80 whitespace-pre-line">{m.body}</p>
@@ -414,7 +489,7 @@ export default function AccountDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { account, isLoading } = useAccount(id);
+  const { account, isLoading: accountLoading, error: accountError } = useAccount(id);
   const { contacts } = useAccountContacts(id);
   const { angles } = useAccountAngles(id);
   const { actionPlan } = useAccountActionPlan(id);
@@ -422,8 +497,27 @@ export default function AccountDetail() {
 
   const contactCount = contacts.length;
 
-  if (isLoading) return null;
-  if (!account) return null;
+  if (accountLoading) {
+    return (
+      <div className="p-6 max-w-5xl mx-auto space-y-6">
+        <Skeleton className="h-10 w-64" />
+        <Skeleton className="h-6 w-48" />
+        <div className="space-y-4">
+          <Skeleton className="h-40 w-full rounded-lg" />
+          <Skeleton className="h-40 w-full rounded-lg" />
+        </div>
+      </div>
+    );
+  }
+
+  if (accountError || !account) {
+    return (
+      <div className="p-6 max-w-5xl mx-auto text-center space-y-3">
+        <p className="text-sm text-destructive">Compte non trouvé ou erreur de chargement.</p>
+        <Button variant="outline" size="sm" onClick={() => navigate("/accounts")}>Retour aux comptes</Button>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
@@ -448,14 +542,36 @@ export default function AccountDetail() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => toast({ title: "Export CSV", description: `Fiche ${account.company_name} exportée en CSV.` })}
+              onClick={() => {
+                if (contacts.length === 0) {
+                  toast({ title: "Aucun contact", description: "Pas de contacts à exporter pour ce compte." });
+                  return;
+                }
+                const csv = generateCSV(contacts, account.company_name);
+                const date = new Date().toISOString().split("T")[0];
+                const filename = `bellum_${account.company_name.toLowerCase().replace(/\s+/g, "_")}_${date}.csv`;
+                downloadCSV(csv, filename);
+                toast({ title: "Export réussi", description: `${contacts.length} contacts exportés dans ${filename}` });
+              }}
             >
               <Download className="h-3.5 w-3.5 mr-1.5" />CSV
             </Button>
             <Button
               variant="outline"
               size="sm"
-              onClick={() => toast({ title: "Export Google Sheets", description: `Fiche ${account.company_name} exportée vers Sheets.` })}
+              onClick={() => {
+                if (contacts.length === 0) {
+                  toast({ title: "Aucun contact", description: "Pas de contacts à exporter." });
+                  return;
+                }
+                const csv = generateCSV(contacts, account.company_name);
+                const date = new Date().toISOString().split("T")[0];
+                downloadCSV(csv, `bellum_${account.company_name.toLowerCase().replace(/\s+/g, "_")}_${date}.csv`);
+                toast({
+                  title: "Fichier CSV téléchargé",
+                  description: "Ouvrez Google Sheets → Fichier → Importer → Sélectionnez le CSV téléchargé.",
+                });
+              }}
             >
               <FileSpreadsheet className="h-3.5 w-3.5 mr-1.5" />Sheets
             </Button>
@@ -473,7 +589,7 @@ export default function AccountDetail() {
         </TabsList>
 
         <TabsContent value="fiche" className="mt-6"><TabFiche account={account} /></TabsContent>
-        <TabsContent value="contacts" className="mt-6"><TabContacts contacts={contacts as Contact[]} /></TabsContent>
+        <TabsContent value="contacts" className="mt-6"><TabContacts contacts={contacts as Contact[]} companyName={account.company_name} /></TabsContent>
         <TabsContent value="plan" className="mt-6"><TabPlan angles={angles as AttackAngle[]} actionPlan={actionPlan as ActionPlan | null} /></TabsContent>
         <TabsContent value="messages" className="mt-6"><TabMessages contacts={contacts as Contact[]} /></TabsContent>
       </Tabs>
