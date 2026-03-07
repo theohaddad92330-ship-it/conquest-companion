@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 
 export default function Signup() {
   const [name, setName] = useState("");
@@ -29,15 +30,35 @@ export default function Signup() {
       return;
     }
     setLoading(true);
-    const { error } = await signUp(email, password, name);
+    const { error, session } = await signUp(email, password, name);
     setLoading(false);
     if (error) {
-      const msg = error.message?.includes("already registered")
-        ? "Un compte existe déjà avec cette adresse email."
-        : error.message || "Une erreur est survenue.";
-      toast({ title: "Erreur d'inscription", description: msg, variant: "destructive" });
+      const errMsg = (error as Error).message ?? "";
+      const alreadyRegistered =
+        errMsg.includes("already registered") || errMsg.includes("User already registered");
+      if (alreadyRegistered) {
+        toast({
+          title: "Compte existant",
+          description: "Un compte existe déjà avec cet email. Connectez-vous.",
+          variant: "destructive",
+          action: (
+            <ToastAction altText="Aller à la connexion" onClick={() => navigate("/login")}>
+              Se connecter
+            </ToastAction>
+          ),
+        });
+      } else {
+        toast({ title: "Erreur d'inscription", description: errMsg || "Une erreur est survenue.", variant: "destructive" });
+      }
+    } else if (session) {
+      // Session créée (confirmation email désactivée) → aller directement à l'onboarding, pas à /login
+      navigate("/onboarding", { replace: true });
     } else {
-      navigate("/welcome");
+      toast({
+        title: "Vérifiez votre email",
+        description: "Un lien de confirmation a été envoyé. Cliquez dessus pour activer votre compte.",
+        variant: "default",
+      });
     }
   };
 
@@ -46,7 +67,11 @@ export default function Signup() {
     const { error } = await signInWithGoogle();
     setLoading(false);
     if (error) {
-      toast({ title: "Erreur Google", description: error.message || "Impossible de s'inscrire avec Google.", variant: "destructive" });
+      toast({
+        title: "Connexion Google",
+        description: "La connexion Google n'est pas encore disponible. Utilisez votre email.",
+        variant: "destructive",
+      });
     }
   };
 

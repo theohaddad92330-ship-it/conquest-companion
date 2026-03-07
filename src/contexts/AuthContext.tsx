@@ -2,14 +2,13 @@ import { createContext, useContext, useEffect, useRef, useState, ReactNode } fro
 import { useNavigate } from "react-router-dom";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable";
 import { useToast } from "@/hooks/use-toast";
 
 interface AuthContextType {
   session: Session | null;
   user: User | null;
   loading: boolean;
-  signUp: (email: string, password: string, fullName: string) => Promise<{ error: unknown }>;
+  signUp: (email: string, password: string, fullName: string) => Promise<{ error: unknown; session?: Session | null; user?: User | null }>;
   signIn: (email: string, password: string) => Promise<{ error: unknown }>;
   signInWithGoogle: () => Promise<{ error: unknown }>;
   signOut: () => Promise<void>;
@@ -56,7 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [navigate, toast]);
 
   const signUp = async (email: string, password: string, fullName: string) => {
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -64,7 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         emailRedirectTo: `${window.location.origin}/welcome`,
       },
     });
-    return { error };
+    return { error, session: data?.session, user: data?.user };
   };
 
   const signIn = async (email: string, password: string) => {
@@ -73,11 +72,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signInWithGoogle = async () => {
-    const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: `${window.location.origin}/dashboard`,
+    const redirectTo = `${window.location.origin}/dashboard`;
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo },
     });
-    if (result.error) return { error: result.error };
-    return { error: null };
+    if (error) return { error };
+    if (data?.url) {
+      window.location.href = data.url;
+      return { error: null };
+    }
+    return { error: new Error("Pas d'URL de redirection OAuth") };
   };
 
   const signOut = async () => {

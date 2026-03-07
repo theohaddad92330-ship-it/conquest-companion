@@ -3,33 +3,45 @@ import { Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+
+const GOOGLE_NOT_CONFIGURED_MSG = "La connexion Google n'est pas encore disponible. Utilisez votre email.";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const { signIn, signInWithGoogle } = useAuth();
+  const { user, signIn, signInWithGoogle } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const hasRedirected = useRef(false);
 
-  // Redirection selon onboarding : /onboarding si questionnaire non fait, sinon /dashboard
-  const redirectAfterLogin = async (userId: string) => {
-    const { data } = await supabase
-      .from("profiles")
-      .select("onboarding_completed")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (data && data.onboarding_completed === false) {
-      navigate("/onboarding");
-    } else {
-      navigate("/dashboard");
+  useEffect(() => {
+    if (!user) {
+      hasRedirected.current = false;
+      return;
     }
-  };
+    if (hasRedirected.current) return;
+    hasRedirected.current = true;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("onboarding_completed")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (cancelled) return;
+      if (data?.onboarding_completed === true) {
+        navigate("/dashboard", { replace: true });
+      } else {
+        navigate("/onboarding", { replace: true });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,14 +53,12 @@ export default function Login() {
     const { error } = await signIn(email, password);
     setLoading(false);
     if (error) {
-      const msg = error.message?.includes("Invalid login")
+      const msg = (error as Error).message?.includes("Invalid login")
         ? "Email ou mot de passe incorrect."
-        : error.message || "Une erreur est survenue.";
+        : (error as Error).message || "Une erreur est survenue.";
       toast({ title: "Erreur de connexion", description: msg, variant: "destructive" });
-    } else {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) await redirectAfterLogin(user.id);
     }
+    // La redirection est gérée par le useEffect qui réagit à user
   };
 
   const handleGoogle = async () => {
@@ -56,7 +66,7 @@ export default function Login() {
     const { error } = await signInWithGoogle();
     setLoading(false);
     if (error) {
-      toast({ title: "Erreur Google", description: error.message || "Impossible de se connecter avec Google.", variant: "destructive" });
+      toast({ title: "Connexion Google", description: GOOGLE_NOT_CONFIGURED_MSG, variant: "destructive" });
     }
   };
 

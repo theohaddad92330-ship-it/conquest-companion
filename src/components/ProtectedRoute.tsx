@@ -1,21 +1,31 @@
+import { Link, Navigate, useLocation } from "react-router-dom";
+import { Zap, Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { Navigate, useLocation } from "react-router-dom";
 import { useProfile } from "@/hooks/useProfile";
+
+function LoadingScreen() {
+  return (
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
+      <Link to="/" className="inline-flex items-center gap-2">
+        <div className="h-9 w-9 flex items-center justify-center rounded-lg bg-primary">
+          <Zap className="h-4.5 w-4.5 text-primary-foreground" />
+        </div>
+        <span className="font-display text-xl font-bold">Bellum AI</span>
+      </Link>
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <p className="text-sm text-muted-foreground">Chargement…</p>
+    </div>
+  );
+}
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading: authLoading } = useAuth();
   const { profile, loading: profileLoading } = useProfile();
   const location = useLocation();
 
-  if (authLoading || profileLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-          <p className="text-sm text-muted-foreground">Chargement…</p>
-        </div>
-      </div>
-    );
+  // Ne jamais rediriger pendant le chargement : spinner logo + Loader2, jamais de page blanche
+  if (authLoading === true || profileLoading === true) {
+    return <LoadingScreen />;
   }
 
   if (!user) return <Navigate to="/login" replace />;
@@ -23,8 +33,9 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   // Pages autorisées sans avoir terminé le questionnaire
   const isOnboardingFlow = ["/welcome", "/onboarding"].includes(location.pathname);
 
-  // Accès au dashboard (et autres pages app) uniquement après onboarding complété
-  if (profile && profile.onboarding_completed === false && !isOnboardingFlow) {
+  // Profil absent (trigger pas encore exécuté ou erreur) → considérer onboarding non fait
+  const onboardingDone = profile?.onboarding_completed === true;
+  if (!isOnboardingFlow && !onboardingDone) {
     return <Navigate to="/onboarding" replace />;
   }
 

@@ -25,17 +25,23 @@ export function useProfile() {
       setLoading(false);
       return;
     }
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("user_id", user.id)
+        .maybeSingle();
 
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    if (!error && data) {
-      setProfile(data as unknown as Profile);
+      if (!error && data) {
+        setProfile(data as unknown as Profile);
+      } else {
+        setProfile(null);
+      }
+    } catch {
+      setProfile(null);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
@@ -45,15 +51,17 @@ export function useProfile() {
   const updateProfile = async (updates: Partial<Profile>) => {
     if (!user) return { error: new Error("Not authenticated") };
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("profiles")
       .update(updates as any)
-      .eq("user_id", user.id);
+      .eq("user_id", user.id)
+      .select()
+      .single();
 
-    if (!error) {
-      setProfile((prev) => prev ? { ...prev, ...updates } : null);
+    if (!error && data) {
+      setProfile(data as unknown as Profile);
     }
-    return { error };
+    return { error, data };
   };
 
   return { profile, loading, updateProfile, refetch: fetchProfile };

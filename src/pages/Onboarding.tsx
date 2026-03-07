@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Target, ArrowLeft, ArrowRight, AlertCircle, Loader2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, AlertCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
@@ -31,7 +31,6 @@ export default function Onboarding() {
   const [showError, setShowError] = useState(false);
   const [saving, setSaving] = useState(false);
   const isLast = current === steps.length - 1;
-  const isDone = current === steps.length;
 
   const step = steps[current];
 
@@ -53,19 +52,26 @@ export default function Onboarding() {
     return true;
   };
 
-  const saveOnboarding = async () => {
+  const saveOnboarding = async (): Promise<boolean> => {
     setSaving(true);
-    const { error } = await updateProfile({
+    const payload = {
       onboarding_completed: true,
       onboarding_data: answers as any,
       company_name: answers.esnName || null,
-    });
+    };
+    const { error, data } = await updateProfile(payload);
     setSaving(false);
     if (error) {
       toast({ title: "Erreur", description: "Impossible de sauvegarder votre profil.", variant: "destructive" });
       return false;
     }
-    return true;
+    const saved = !!data?.onboarding_completed;
+    if (saved) {
+      console.log("[Onboarding] Sauvegarde OK — onboarding_completed: true", data);
+    } else {
+      console.warn("[Onboarding] Sauvegarde incertaine — pas de donnée retournée", { error, data });
+    }
+    return saved;
   };
 
   const next = async () => {
@@ -78,7 +84,7 @@ export default function Onboarding() {
 
     if (isLast) {
       const saved = await saveOnboarding();
-      if (saved) setCurrent((c) => c + 1);
+      if (saved) navigate("/dashboard", { replace: true });
     } else {
       setCurrent((c) => c + 1);
     }
@@ -88,33 +94,6 @@ export default function Onboarding() {
     setShowError(false);
     setCurrent((c) => Math.max(c - 1, 0));
   };
-
-  if (isDone) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center px-6">
-        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="text-center max-w-md space-y-6">
-          <div className="flex justify-center mb-2">
-            {Array.from({ length: steps.length }).map((_, i) => (
-              <div key={i} className="h-2 w-6 mx-0.5 rounded-full bg-primary" />
-            ))}
-          </div>
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-primary/10">
-            <Target className="h-7 w-7 text-primary" />
-          </div>
-          <h1 className="font-display text-2xl font-bold">Votre profil est prêt.</h1>
-          <p className="text-foreground/60">
-            Bellum va personnaliser tous vos résultats en fonction de vos offres, vos cibles et votre positionnement.
-          </p>
-          <Button size="lg" className="h-12 px-8" onClick={() => navigate("/dashboard")}>
-            Lancer ma première recherche <ArrowRight className="h-4 w-4" />
-          </Button>
-          <p className="text-xs text-foreground/40">
-            Vous pourrez compléter votre profil à tout moment depuis les paramètres.
-          </p>
-        </motion.div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6">
