@@ -11,6 +11,7 @@ import { SearchCorrectionBanner } from "@/components/SearchCorrectionBanner";
 import { useToast } from "@/hooks/use-toast";
 import { useAnalysisPolling } from "@/hooks/useAnalysisPolling";
 import { useCompanySearch } from "@/hooks/useCompanySearch";
+import { useCancelAnalysis } from "@/hooks/useAccounts";
 
 interface Step {
   label: string;
@@ -54,7 +55,8 @@ export default function SearchPage() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const inputWrapperRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
-  const { state: analysis, startAnalysis, resetState, resumeAnalysis } = useAnalysisPolling();
+  const { state: analysis, startAnalysis, resetState, resumeAnalysis, stopPolling } = useAnalysisPolling();
+  const cancelAnalysis = useCancelAnalysis();
   const { suggestions, isSearching: isSuggesting, searchError, search: searchSuggestions, clear: clearSuggestions } = useCompanySearch();
 
   const isAnalyzingOrLoading = analysis.status === "loading" || analysis.status === "analyzing";
@@ -252,9 +254,30 @@ export default function SearchPage() {
                     <p className="text-sm font-semibold">
                       {query} — {analysis.currentStep || "Analyse en cours..."}
                     </p>
-                    <span className="text-xs font-medium text-primary bg-primary/10 px-2.5 py-1 rounded-full tabular-nums">
-                      {formatTimeRemaining(elapsedSeconds, analysis.progress ?? 0)}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-primary bg-primary/10 px-2.5 py-1 rounded-full tabular-nums">
+                        {formatTimeRemaining(elapsedSeconds, analysis.progress ?? 0)}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive border-destructive/50 hover:bg-destructive/10"
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          if (!analysis.accountId) return;
+                          try {
+                            await cancelAnalysis(analysis.accountId);
+                            stopPolling();
+                            resetState();
+                            toast({ title: "Analyse arrêtée", description: "L'analyse a été interrompue." });
+                          } catch {
+                            toast({ title: "Erreur", description: "Impossible d'arrêter l'analyse.", variant: "destructive" });
+                          }
+                        }}
+                      >
+                        Arrêter l'analyse
+                      </Button>
+                    </div>
                   </div>
                   <ul className="text-xs text-muted-foreground mb-3 space-y-1 list-disc list-inside">
                     {LOADING_MESSAGES.map((msg, i) => (

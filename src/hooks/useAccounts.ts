@@ -1,7 +1,24 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { AccountAnalysis } from '@/types/account';
 import { useAuth } from '@/contexts/AuthContext';
+
+/** Met à jour un compte "analyzing" en "error" (annulé) pour arrêter l'analyse. */
+export function useCancelAnalysis() {
+  const queryClient = useQueryClient();
+  return async (accountId: string) => {
+    const { error } = await supabase
+      .from('accounts')
+      .update({
+        status: 'error',
+        error_message: "Annulé par l'utilisateur",
+      })
+      .eq('id', accountId);
+    if (error) throw error;
+    queryClient.invalidateQueries({ queryKey: ['accounts'] });
+    queryClient.invalidateQueries({ queryKey: ['account', accountId] });
+  };
+}
 
 export function useAccounts() {
   const { user } = useAuth();

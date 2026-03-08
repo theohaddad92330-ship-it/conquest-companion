@@ -18,7 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { useAccount, useAccountActionPlan, useAccountAngles, useAccountContacts } from "@/hooks/useAccounts";
+import { useAccount, useAccountActionPlan, useAccountAngles, useAccountContacts, useCancelAnalysis } from "@/hooks/useAccounts";
 import type { AccountAnalysis, Contact, AttackAngle, ActionPlan } from "@/types/account";
 import { generateCSV, downloadCSV } from "@/lib/export-csv";
 
@@ -730,10 +730,11 @@ export default function AccountDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { account, isLoading: accountLoading, error: accountError } = useAccount(id, { refetchWhenAnalyzing: true });
+  const { account, isLoading: accountLoading, error: accountError, refetch: refetchAccount } = useAccount(id, { refetchWhenAnalyzing: true });
   const { contacts } = useAccountContacts(id);
   const { angles } = useAccountAngles(id);
   const { actionPlan } = useAccountActionPlan(id);
+  const cancelAnalysis = useCancelAnalysis();
   const [adjustPrompt, setAdjustPrompt] = useState("");
 
   const isAnalyzing = account?.status === "analyzing";
@@ -790,6 +791,24 @@ export default function AccountDetail() {
             <p className="text-xs text-muted-foreground">
               La page se met à jour toutes les 2 secondes. Vous pouvez aussi retourner sur Nouvelle recherche pour voir le suivi.
             </p>
+            {id && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2 text-destructive border-destructive/50 hover:bg-destructive/10"
+                onClick={async () => {
+                  try {
+                    await cancelAnalysis(id);
+                    await refetchAccount();
+                    toast({ title: "Analyse arrêtée", description: "L'analyse a été interrompue." });
+                  } catch {
+                    toast({ title: "Erreur", description: "Impossible d'arrêter l'analyse.", variant: "destructive" });
+                  }
+                }}
+              >
+                Arrêter l&apos;analyse
+              </Button>
+            )}
             <div className="mt-3 space-y-1.5">
               {analysisSteps.map((step, i) => (
                 <div key={i} className="flex items-center gap-2.5 text-sm">

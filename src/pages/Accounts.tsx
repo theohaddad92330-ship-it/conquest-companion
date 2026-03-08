@@ -3,7 +3,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import {
   Building2, Calendar, Search, Filter, MoreHorizontal,
-  ChevronLeft, ChevronRight, RefreshCw, Archive, Trash2,
+  ChevronLeft, ChevronRight, RefreshCw, Archive, Trash2, AlertTriangle,
 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +17,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { useToast } from "@/hooks/use-toast";
-import { useAccounts } from "@/hooks/useAccounts";
+import { useAccounts, useCancelAnalysis } from "@/hooks/useAccounts";
 
 const fadeUp = { hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } };
 const PAGE_SIZE = 7;
@@ -25,7 +25,8 @@ const PAGE_SIZE = 7;
 export default function Accounts() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { accounts, isLoading, error } = useAccounts();
+  const { accounts, isLoading, error, refetch } = useAccounts();
+  const cancelAnalysis = useCancelAnalysis();
   const [search, setSearch] = useState("");
   const [sectorFilter, setSectorFilter] = useState("all");
   const [scoreFilter, setScoreFilter] = useState("all");
@@ -231,6 +232,23 @@ export default function Accounts() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                        {account.status === "analyzing" && (
+                          <DropdownMenuItem
+                            className="gap-2 text-sm text-destructive"
+                            onClick={async (e) => {
+                              e.preventDefault();
+                              try {
+                                await cancelAnalysis(account.id);
+                                await refetch();
+                                toast({ title: "Analyse arrêtée", description: `${account.company_name ?? account.companyName} — l'analyse a été interrompue.` });
+                              } catch {
+                                toast({ title: "Erreur", description: "Impossible d'arrêter l'analyse.", variant: "destructive" });
+                              }
+                            }}
+                          >
+                            <AlertTriangle className="h-3.5 w-3.5" />Arrêter l&apos;analyse
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem
                           className="gap-2 text-sm"
                           onClick={() => toast({ title: "Analyse relancée", description: `${account.company_name ?? account.companyName} est en cours de ré-analyse.` })}
