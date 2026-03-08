@@ -253,6 +253,13 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
       console.log(JSON.stringify({ event: 'contacts_source', traceId, source: 'claude_no_apify', count: finalContacts.length }))
     }
 
+    // Si après tout on a toujours 0 contacts → générer avec Claude
+    if (finalContacts.length === 0) {
+      console.log(JSON.stringify({ event: 'no_contacts_fallback', traceId }))
+      finalContacts = await generateContactsWithClaude(companyName, analysis, onboardingData, traceId)
+      console.log(JSON.stringify({ event: 'contacts_generated', traceId, count: finalContacts.length }))
+    }
+
     // ÉTAPE 7 — Sauvegarde finale (contacts + status completed)
     if (finalContacts.length > 0) {
       await supabase.from('contacts').insert(
@@ -805,7 +812,7 @@ RÈGLES :
 
 Réponds UNIQUEMENT en JSON valide. Un tableau d'objets.`
 
-  const userPrompt = `Génère 25 contacts pour ${companyName}.
+  const userPrompt = `Génère 15 contacts pour ${companyName}.
 
 Structure de chaque contact :
 {
@@ -837,7 +844,7 @@ Structure de chaque contact :
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 8000,
+        max_tokens: 6000,
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
       }),
