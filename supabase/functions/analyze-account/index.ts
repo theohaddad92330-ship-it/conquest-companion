@@ -225,7 +225,8 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
         }
       }
 
-      const linkedinContacts = await scrapeLinkedInPeople(companyName, onboardingData, 200, traceId)
+      let linkedinContacts: any[] = await scrapeLinkedInPeople(companyName, onboardingData, 200, traceId)
+      if (!Array.isArray(linkedinContacts)) linkedinContacts = []
       console.log(JSON.stringify({ event: 'apify_detail', traceId, apifyTokenPresent: true, apifyTokenLength: APIFY_API_TOKEN.length, linkedinContactsCount: linkedinContacts.length, companyDataFound: !!companyData }))
 
       if (linkedinContacts.length > 0) {
@@ -233,6 +234,7 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
         contactSourceForDb = 'linkedin_apify'
         console.log(JSON.stringify({ event: 'contacts_source', traceId, source: 'apify_enriched', count: finalContacts.length }))
       } else {
+        console.log(JSON.stringify({ event: 'step5_apify_fallback', traceId, reason: 'linkedinContacts_empty' }))
         console.log(JSON.stringify({ event: 'apify_failed_using_claude_fallback', traceId }))
         try {
           finalContacts = await generateContactsWithClaude(companyName, analysis, onboardingData, traceId)
@@ -293,10 +295,16 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
       + 0.005 * (braveResults.results?.length || 0)
       + 0.1
       + (APIFY_API_TOKEN ? 3.0 : 0)
-    await supabase.from('accounts').update({
+    console.log(JSON.stringify({ event: 'step7_before_completed', traceId, finalContactsCount: finalContacts.length }))
+    const { error: updateStatusError } = await supabase.from('accounts').update({
       status: 'completed',
       api_cost_euros: estimatedCost,
     }).eq('id', accountId)
+    if (updateStatusError) {
+      console.error(JSON.stringify({ event: 'step7_completed_failed', traceId, accountId, error: updateStatusError.message }))
+    } else {
+      console.log(JSON.stringify({ event: 'step7_completed_ok', traceId, accountId }))
+    }
 
     console.log(JSON.stringify({ event: 'analysis_complete', traceId, accountId }))
   } catch (error: unknown) {
@@ -859,7 +867,13 @@ Chaque contact :
     const text = data.content?.[0]?.text || '[]'
     const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
 
-    const contacts = JSON.parse(clean)
+    let contacts: any
+    try {
+      contacts = JSON.parse(clean)
+    } catch (parseErr) {
+      console.error(JSON.stringify({ event: 'generate_contacts_parse_error', traceId, preview: clean.slice(0, 200) }))
+      return []
+    }
     console.log(JSON.stringify({ event: 'generate_contacts_success', traceId, count: Array.isArray(contacts) ? contacts.length : 0 }))
     return Array.isArray(contacts) ? contacts : []
   } catch (err) {
