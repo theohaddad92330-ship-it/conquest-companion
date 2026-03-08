@@ -28,15 +28,47 @@ const initialSteps: Step[] = [
   { label: "Génération messages", status: "pending" },
 ];
 
+const ESTIMATED_TOTAL_SECONDS = 120; // ~2 min pour les premières étapes
+
+function formatTimeRemaining(elapsedSeconds: number, progress: number): string {
+  const remaining = Math.max(0, ESTIMATED_TOTAL_SECONDS - elapsedSeconds);
+  if (remaining <= 0 || progress >= 80) return "Quasi terminé…";
+  if (remaining < 60) return `~${remaining} s restantes`;
+  const m = Math.floor(remaining / 60);
+  const s = remaining % 60;
+  return s ? `~${m} min ${s} s restantes` : `~${m} min restantes`;
+}
+
+const LOADING_MESSAGES = [
+  "Nous traitons plus de 238 sources de données en même temps.",
+  "Recherche web, analyse IA et enrichissement des contacts en cours.",
+  "Ne fermez pas la page — la mise à jour est automatique toutes les 2 secondes.",
+  "Les premières étapes (recherche + analyse) prennent en général 1 à 2 minutes.",
+];
+
 export default function SearchPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [query, setQuery] = useState(searchParams.get("q") || "");
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const inputWrapperRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
-  const { state: analysis, startAnalysis, resetState } = useAnalysisPolling();
+  const { state: analysis, startAnalysis, resetState, resumeAnalysis } = useAnalysisPolling();
   const { suggestions, isSearching: isSuggesting, searchError, search: searchSuggestions, clear: clearSuggestions } = useCompanySearch();
+
+  const isAnalyzingOrLoading = analysis.status === "loading" || analysis.status === "analyzing";
+  useEffect(() => {
+    if (!isAnalyzingOrLoading) {
+      setElapsedSeconds(0);
+      return;
+    }
+    const t = setInterval(() => setElapsedSeconds((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [isAnalyzingOrLoading]);
+  useEffect(() => {
+    if (analysis.status === "loading" && analysis.accountId) setElapsedSeconds(0);
+  }, [analysis.status, analysis.accountId]);
 
   const steps = useMemo<Step[]>(() => {
     const base = initialSteps.map((s) => ({ ...s, status: "pending" as const, duration: undefined }));
@@ -83,11 +115,20 @@ export default function SearchPage() {
     if (q) { setQuery(q); }
   }, [searchParams]);
 
+  // Reprendre l'affichage de l'avancement si une analyse était en cours (ex. retour depuis Mes comptes)
   useEffect(() => {
-    if (searchError) {
-      toast({ title: "Recherche", description: searchError, variant: "destructive" });
-    }
-  }, [searchError, toast]);
+    resumeAnalysis();
+  }, [resumeAnalysis]);
+
+  // Ne pas afficher le toast d'erreur des suggestions pendant une analyse en cours (évite bandeau rouge parasite)
+  const lastSearchErrorRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!searchError) return;
+    if (analysis.status === "loading" || analysis.status === "analyzing") return;
+    if (lastSearchErrorRef.current === searchError) return;
+    lastSearchErrorRef.current = searchError;
+    toast({ title: "Recherche", description: searchError, variant: "destructive" });
+  }, [searchError, analysis.status, toast]);
 
   useEffect(() => {
     const q = searchParams.get("q");
@@ -207,9 +248,19 @@ export default function SearchPage() {
             {(analysis.status === "loading" || analysis.status === "analyzing") && (
               <Card className="border-border">
                 <CardContent className="p-5 space-y-2">
-                  <p className="text-sm font-semibold mb-3">
-                    {query} — {analysis.currentStep || "Analyse en cours..."}
-                  </p>
+                  <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+                    <p className="text-sm font-semibold">
+                      {query} — {analysis.currentStep || "Analyse en cours..."}
+                    </p>
+                    <span className="text-xs font-medium text-primary bg-primary/10 px-2.5 py-1 rounded-full tabular-nums">
+                      {formatTimeRemaining(elapsedSeconds, analysis.progress ?? 0)}
+                    </span>
+                  </div>
+                  <ul className="text-xs text-muted-foreground mb-3 space-y-1 list-disc list-inside">
+                    {LOADING_MESSAGES.map((msg, i) => (
+                      <li key={i}>{msg}</li>
+                    ))}
+                  </ul>
                   {steps.map((step, i) => (
                     <div key={i} className="flex items-center justify-between py-1.5">
                       <div className="flex items-center gap-2.5">

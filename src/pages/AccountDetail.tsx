@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import {
   ArrowLeft, Download, FileSpreadsheet, Pencil, Building2, Users,
   GitBranch, AlertTriangle, TrendingUp, Target, Mail, Linkedin,
-  RotateCw, Phone, ExternalLink, Copy, CheckCircle, Star,
+  RotateCw, Phone, ExternalLink, Copy, CheckCircle, Star, Loader2, Circle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -83,6 +83,40 @@ function TabFiche({ account }: { account: AccountAnalysis }) {
           </div>
         </CardContent>
       </Card>
+
+      {(account.raw_analysis?.programNames?.length > 0) && (
+        <Card className="border-border">
+          <CardContent className="p-5 space-y-3">
+            <h3 className="font-display text-sm font-semibold flex items-center gap-2">
+              <Target className="h-4 w-4 text-primary" />Programmes et projets détectés
+            </h3>
+            <ul className="text-sm space-y-1">
+              {account.raw_analysis.programNames.map((name: string, i: number) => (
+                <li key={i} className="flex items-center gap-2"><span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />{name}</li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
+      {(account.raw_analysis?.entitiesExhaustive?.length > 0) && (
+        <Card className="border-border">
+          <CardContent className="p-5 space-y-3">
+            <h3 className="font-display text-sm font-semibold flex items-center gap-2">
+              <Building2 className="h-4 w-4 text-primary" />Cartographie des entités
+            </h3>
+            <div className="space-y-2 text-sm">
+              {account.raw_analysis.entitiesExhaustive.map((e: { name?: string; type?: string; parent?: string }, i: number) => (
+                <div key={i} className="flex items-center gap-2 flex-wrap">
+                  <Badge variant="outline" className="text-xs">{e.name || "—"}</Badge>
+                  <span className="text-muted-foreground text-xs">{e.type || ""}</span>
+                  {e.parent && <span className="text-muted-foreground text-xs">← {e.parent}</span>}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="border-border">
         <CardContent className="p-5 space-y-3">
@@ -338,6 +372,199 @@ function TabContacts({ contacts, companyName }: { contacts: Contact[]; companyNa
   );
 }
 
+function TabOrganigramme({ account, contacts }: { account: AccountAnalysis; contacts: Contact[] }) {
+  const entities = useMemo(() => {
+    const fromRaw = (account.raw_analysis?.entitiesExhaustive || []).map((e: { name?: string; type?: string; parent?: string }) => e.name || "");
+    if (fromRaw.length > 0) return [...new Set(fromRaw)];
+    const fromSubs = account.subsidiaries || [];
+    const fromContacts = contacts.map((c) => c.entity).filter(Boolean) as string[];
+    return [...new Set(["Groupe", ...fromSubs, ...fromContacts])];
+  }, [account.raw_analysis?.entitiesExhaustive, account.subsidiaries, contacts]);
+
+  const contactsByEntity = useMemo(() => {
+    const map: Record<string, Contact[]> = {};
+    for (const e of entities) map[e] = [];
+    for (const c of contacts) {
+      const key = (c.entity || "Groupe").trim() || "Groupe";
+      if (!map[key]) map[key] = [];
+      map[key].push(c);
+    }
+    return map;
+  }, [entities, contacts]);
+
+  const roleLabel: Record<string, string> = {
+    sponsor: "Décideur",
+    champion: "Champion",
+    operational: "Opérationnel",
+    purchasing: "Achats",
+    influencer: "Influenceur",
+    blocker: "Blocant",
+    unknown: "—",
+  };
+
+  return (
+    <div className="space-y-6">
+      <p className="text-xs text-muted-foreground">
+        Hiérarchie : entités du groupe et décideurs identifiés. Les zones sans contact sont signalées.
+      </p>
+      <div className="relative">
+        {/* Niveau 0 : entreprise */}
+        <div className="flex justify-center mb-4">
+          <div className="rounded-lg border-2 border-primary bg-primary/10 px-4 py-2 text-sm font-semibold">
+            {account.company_name}
+          </div>
+        </div>
+        <div className="flex justify-center">
+          <div className="w-px h-4 bg-border" />
+        </div>
+        {/* Niveau 1 : entités */}
+        <div className="flex flex-wrap justify-center gap-4 mt-2">
+          {entities.map((entity) => {
+            const list = contactsByEntity[entity] || [];
+            const uncovered = list.length === 0;
+            return (
+              <div key={entity} className="flex flex-col items-center min-w-[200px]">
+                <div className="w-px h-4 bg-border shrink-0" />
+                <div
+                  className={`rounded-lg border-2 px-3 py-2 w-full text-center text-sm font-medium ${
+                    uncovered ? "border-dashed border-muted-foreground/50 bg-muted/30 text-muted-foreground" : "border-border bg-card"
+                  }`}
+                >
+                  {entity}
+                  {uncovered && <span className="block text-xs mt-1">Zone non couverte</span>}
+                </div>
+                <div className="w-px flex-1 min-h-[8px] bg-border mt-2" />
+                <div className="mt-2 space-y-2 w-full">
+                  {list.map((c) => (
+                    <div
+                      key={c.id}
+                      className="rounded-md border border-border bg-background px-3 py-2 text-left text-xs"
+                    >
+                      <div className="font-medium text-foreground">{c.full_name}</div>
+                      <div className="text-muted-foreground">{c.title || "—"}</div>
+                      <Badge variant="secondary" className="mt-1 text-[10px]">
+                        {roleLabel[c.decision_role] || c.decision_role}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TabOuvrirCompte({ raw }: { raw: any }) {
+  const data = raw?.commentOuvrirCompte;
+  if (!data) return <p className="text-sm text-muted-foreground">Aucune donnée disponible. Relancez une analyse pour générer cette section.</p>;
+  return (
+    <div className="space-y-6">
+      <Card className="border-border">
+        <CardContent className="p-5 space-y-3">
+          <h3 className="font-display text-sm font-semibold">Stratégie d&apos;entrée</h3>
+          <p className="text-sm text-foreground/90 whitespace-pre-line">{data.strategy || "—"}</p>
+        </CardContent>
+      </Card>
+      {(data.entryPoints?.length > 0) && (
+        <Card className="border-border">
+          <CardContent className="p-5 space-y-3">
+            <h3 className="font-display text-sm font-semibold">Portes d&apos;entrée recommandées</h3>
+            <ul className="space-y-2">
+              {data.entryPoints.map((ep: { label?: string; justification?: string }, i: number) => (
+                <li key={i} className="flex flex-col gap-1 text-sm">
+                  <span className="font-medium">{ep.label || "—"}</span>
+                  {ep.justification && <span className="text-muted-foreground text-xs">{ep.justification}</span>}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function TabOffresConstruire({ raw }: { raw: any }) {
+  const data = raw?.offresAConstruire;
+  if (!data) return <p className="text-sm text-muted-foreground">Aucune donnée disponible. Relancez une analyse pour générer cette section.</p>;
+  const offers = data.offers || [];
+  if (offers.length === 0) return <p className="text-sm text-muted-foreground">Aucune offre recommandée.</p>;
+  return (
+    <div className="space-y-4">
+      <Card className="border-border">
+        <CardContent className="p-5 space-y-4">
+          <h3 className="font-display text-sm font-semibold">Offres ESN à proposer</h3>
+          {offers.map((o: { offer?: string; order?: number; interlocutor?: string; pitch?: string }, i: number) => (
+            <div key={i} className="border-b border-border pb-4 last:border-0 last:pb-0">
+              <div className="flex items-center gap-2 text-sm font-medium">#{o.order ?? i + 1} — {o.offer || "—"}</div>
+              {o.interlocutor && <p className="text-xs text-muted-foreground mt-1">Pour : {o.interlocutor}</p>}
+              {o.pitch && <p className="text-sm text-foreground/80 mt-2">{o.pitch}</p>}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function TabPlanHebdo({ raw }: { raw: any }) {
+  const data = raw?.planHebdomadaire;
+  if (!data) return <p className="text-sm text-muted-foreground">Aucune donnée disponible. Relancez une analyse pour générer cette section.</p>;
+  const weeks = data.weeks || [];
+  return (
+    <div className="space-y-6">
+      {data.methodology && (
+        <p className="text-xs text-muted-foreground italic">{data.methodology}</p>
+      )}
+      {weeks.map((w: { week?: number; theme?: string; actions?: string[] }, i: number) => (
+        <Card key={i} className="border-border">
+          <CardContent className="p-5 space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-primary">Semaine {w.week ?? i + 1} — {w.theme ?? "—"}</p>
+            <ul className="list-disc list-inside text-sm space-y-1">
+              {(w.actions || []).map((a: string, j: number) => <li key={j}>{a}</li>)}
+            </ul>
+          </CardContent>
+        </Card>
+      ))}
+      {weeks.length === 0 && <p className="text-sm text-muted-foreground">Aucune action hebdomadaire.</p>}
+    </div>
+  );
+}
+
+function TabEvaluation({ raw }: { raw: any }) {
+  const data = raw?.evaluationCompte;
+  if (!data) return <p className="text-sm text-muted-foreground">Aucune donnée disponible. Relancez une analyse pour générer cette section.</p>;
+  const goNoGo = (data.goNoGo || "").toUpperCase();
+  const isGo = goNoGo === "GO";
+  return (
+    <div className="space-y-6">
+      <Card className={`border-2 ${isGo ? "border-bellum-success/50 bg-bellum-success/5" : "border-destructive/30 bg-destructive/5"}`}>
+        <CardContent className="p-5 space-y-2">
+          <p className="text-sm font-semibold">Recommandation : <span className={isGo ? "text-bellum-success" : "text-destructive"}>{data.goNoGo || "—"}</span></p>
+          <p className="text-2xl font-bold">Score global : {data.scoreGlobal ?? "—"}/10</p>
+        </CardContent>
+      </Card>
+      <Card className="border-border">
+        <CardContent className="p-5 space-y-3">
+          <h3 className="font-display text-sm font-semibold">Justification</h3>
+          <p className="text-sm text-foreground/90 whitespace-pre-line">{data.justification || "—"}</p>
+        </CardContent>
+      </Card>
+      {data.recommandation && (
+        <Card className="border-border">
+          <CardContent className="p-5">
+            <h3 className="font-display text-sm font-semibold mb-2">Recommandation</h3>
+            <p className="text-sm text-foreground/90 whitespace-pre-line">{data.recommandation}</p>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 function TabPlan({ angles, actionPlan }: { angles: AttackAngle[]; actionPlan: ActionPlan | null }) {
   return (
     <div className="space-y-6">
@@ -380,12 +607,26 @@ function TabPlan({ angles, actionPlan }: { angles: AttackAngle[]; actionPlan: Ac
                 Semaine {week.week} — {week.title}
               </p>
               <div className="space-y-2">
-                {week.items.map((item, i) => (
-                  <label key={i} className="flex items-start gap-2.5 text-sm cursor-pointer">
-                    <Checkbox className="mt-0.5" />
-                    <span className="text-foreground/80">{item.text}</span>
-                  </label>
-                ))}
+                {week.items.map((item, i) => {
+                  const extra = (item as { responsable?: string; outil?: string; deadline?: string; kpi?: string });
+                  const hasMeta = extra.responsable || extra.outil || extra.deadline || extra.kpi;
+                  return (
+                    <div key={i} className="flex items-start gap-2.5 text-sm">
+                      <Checkbox className="mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-foreground/80">{item.text}</span>
+                        {hasMeta && (
+                          <div className="flex flex-wrap gap-2 mt-1.5 text-xs text-muted-foreground">
+                            {extra.responsable && <span>Responsable : {extra.responsable}</span>}
+                            {extra.outil && <span>Outil : {extra.outil}</span>}
+                            {extra.deadline && <span>Deadline : {extra.deadline}</span>}
+                            {extra.kpi && <span>KPI : {extra.kpi}</span>}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
@@ -489,11 +730,28 @@ export default function AccountDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { account, isLoading: accountLoading, error: accountError } = useAccount(id);
+  const { account, isLoading: accountLoading, error: accountError } = useAccount(id, { refetchWhenAnalyzing: true });
   const { contacts } = useAccountContacts(id);
   const { angles } = useAccountAngles(id);
   const { actionPlan } = useAccountActionPlan(id);
   const [adjustPrompt, setAdjustPrompt] = useState("");
+
+  const isAnalyzing = account?.status === "analyzing";
+  const analysisSteps = useMemo(() => {
+    if (!isAnalyzing) return [];
+    const hasSector = !!account?.sector;
+    const hasContacts = (contacts?.length ?? 0) > 0;
+    const hasAngles = (angles?.length ?? 0) > 0;
+    return [
+      { label: "Recherche web", done: true },
+      { label: "Données entreprise", done: hasSector },
+      { label: "Analyse IA du compte", done: hasSector },
+      { label: "Scraping LinkedIn", done: hasSector },
+      { label: "Construction organigramme", done: hasContacts },
+      { label: "Enrichissement contacts", done: hasContacts },
+      { label: "Génération messages", done: hasAngles },
+    ];
+  }, [isAnalyzing, account?.sector, contacts?.length, angles?.length]);
 
   const contactCount = contacts.length;
 
@@ -521,6 +779,30 @@ export default function AccountDetail() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
+      {/* Avancement détaillé quand le compte est encore "En cours" */}
+      {isAnalyzing && analysisSteps.length > 0 && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="p-5 space-y-2">
+            <p className="text-sm font-semibold flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+              Analyse en cours — vous pouvez suivre l&apos;avancement ici
+            </p>
+            <p className="text-xs text-muted-foreground">
+              La page se met à jour toutes les 2 secondes. Vous pouvez aussi retourner sur Nouvelle recherche pour voir le suivi.
+            </p>
+            <div className="mt-3 space-y-1.5">
+              {analysisSteps.map((step, i) => (
+                <div key={i} className="flex items-center gap-2.5 text-sm">
+                  {step.done ? <CheckCircle className="h-4 w-4 text-bellum-success shrink-0" /> : <Circle className="h-4 w-4 text-muted-foreground/40 shrink-0" />}
+                  <span className={step.done ? "text-foreground" : "text-muted-foreground"}>{step.label}</span>
+                  {step.done && <span className="text-xs text-muted-foreground">Terminé</span>}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Header */}
       <motion.div initial="hidden" animate="visible" variants={fadeUp} className="space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-3">
@@ -581,16 +863,26 @@ export default function AccountDetail() {
 
       {/* Tabs */}
       <Tabs defaultValue="fiche">
-        <TabsList className="bg-secondary/50">
+        <TabsList className="bg-secondary/50 flex-wrap h-auto gap-1">
           <TabsTrigger value="fiche">Fiche compte</TabsTrigger>
           <TabsTrigger value="contacts">Contacts ({contactCount})</TabsTrigger>
+          <TabsTrigger value="organigramme">Organigramme</TabsTrigger>
           <TabsTrigger value="plan">Plan d&apos;action</TabsTrigger>
+          <TabsTrigger value="ouvrir">Ouvrir ce compte</TabsTrigger>
+          <TabsTrigger value="offres">Offres à construire</TabsTrigger>
+          <TabsTrigger value="plan-hebdo">Plan hebdo</TabsTrigger>
+          <TabsTrigger value="evaluation">Évaluation</TabsTrigger>
           <TabsTrigger value="messages">Messages</TabsTrigger>
         </TabsList>
 
         <TabsContent value="fiche" className="mt-6"><TabFiche account={account} /></TabsContent>
         <TabsContent value="contacts" className="mt-6"><TabContacts contacts={contacts as Contact[]} companyName={account.company_name} /></TabsContent>
+        <TabsContent value="organigramme" className="mt-6"><TabOrganigramme account={account} contacts={contacts as Contact[]} /></TabsContent>
         <TabsContent value="plan" className="mt-6"><TabPlan angles={angles as AttackAngle[]} actionPlan={actionPlan as ActionPlan | null} /></TabsContent>
+        <TabsContent value="ouvrir" className="mt-6"><TabOuvrirCompte raw={account.raw_analysis} /></TabsContent>
+        <TabsContent value="offres" className="mt-6"><TabOffresConstruire raw={account.raw_analysis} /></TabsContent>
+        <TabsContent value="plan-hebdo" className="mt-6"><TabPlanHebdo raw={account.raw_analysis} /></TabsContent>
+        <TabsContent value="evaluation" className="mt-6"><TabEvaluation raw={account.raw_analysis} /></TabsContent>
         <TabsContent value="messages" className="mt-6"><TabMessages contacts={contacts as Contact[]} /></TabsContent>
       </Tabs>
 

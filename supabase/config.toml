@@ -1,1 +1,9 @@
 project_id = "tooetwhbumoynwhypsmt"
+
+# Désactive la vérification JWT au gateway pour éviter "Invalid JWT" (401).
+# L'auth est faite dans chaque fonction via supabase.auth.getUser().
+[functions.analyze-account]
+verify_jwt = false
+
+[functions.search-companies]
+verify_jwt = false

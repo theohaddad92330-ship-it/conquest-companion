@@ -59,33 +59,17 @@ serve(async (req) => {
       return jsonResponse({ error: 'JSON invalide' }, 400)
     }
 
-    const companyName = typeof body?.companyName === 'string' ? body.companyName.trim() : ''
+    // Normalisation du nom (trim + espaces multiples → un seul) pour accepter variantes / fautes de frappe
+    const rawName = typeof body?.companyName === 'string' ? body.companyName : ''
+    const companyName = rawName.trim().replace(/\s+/g, ' ')
     const userContext = typeof body?.userContext === 'string' ? body.userContext.slice(0, 2000) : null
 
-    if (!companyName) return jsonResponse({ error: 'companyName requis' }, 400)
-    if (companyName.length > 200) return jsonResponse({ error: 'companyName trop long' }, 400)
+    if (!companyName) return jsonResponse({ error: 'Nom d’entreprise requis' }, 400)
+    if (companyName.length > 200) return jsonResponse({ error: 'Nom trop long (max 200 caractères)' }, 400)
 
-    const { data: rateLimitOk } = await supabase.rpc('check_rate_limit', {
-      p_user_id: user.id,
-      p_max_per_hour: 10,
-    })
-    if (rateLimitOk === false) {
-      return jsonResponse(
-        { error: 'Trop de recherches en peu de temps. Réessayez dans quelques minutes.' },
-        429,
-        { 'Retry-After': '300' }
-      )
-    }
-
-    const { data: creditOk } = await supabase.rpc('check_and_increment_accounts_used', {
-      p_user_id: user.id,
-    })
-    if (creditOk === false) {
-      return jsonResponse(
-        { error: 'Limite de crédits atteinte. Passez à un plan supérieur.' },
-        403
-      )
-    }
+    // DÉSACTIVÉ : rate limit et crédits pour ne jamais bloquer la recherche (réactiver en prod si besoin)
+    // const { data: rateLimitOk, error: rateLimitError } = await supabase.rpc('check_rate_limit', ...)
+    // const { data: creditOk, error: creditError } = await supabase.rpc('check_and_increment_accounts_used', ...)
 
     const { data: account, error: insertError } = await supabase
       .from('accounts')
@@ -98,8 +82,11 @@ serve(async (req) => {
       .select()
       .single()
     if (insertError) {
-      console.error('analyze-account insert error:', insertError.message)
-      return jsonResponse({ error: GENERIC_ERROR_MESSAGE }, 500)
+      console.error('analyze-account insert accounts error:', insertError.message, insertError.code)
+      return jsonResponse(
+        { error: 'Création du compte en cours a échoué. Réessayez ou contactez le support.' },
+        500
+      )
     }
 
     const { data: profile } = await supabase
@@ -247,13 +234,11 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
       )
     }
 
-    // Estimation grossière des coûts après l'analyse
+    // Marquer terminé immédiatement après les contacts (évite de rester "En cours" si timeout juste après)
     const estimatedCost = 0.003 * (scrapedContent.length / 1000)
       + 0.005 * (braveResults.results?.length || 0)
       + 0.1
       + (APIFY_API_TOKEN ? 3.0 : 0)
-
-    // Marquer le compte comme terminé + coût API
     await supabase.from('accounts').update({
       status: 'completed',
       api_cost_euros: estimatedCost,
@@ -263,10 +248,14 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : 'unknown'
     console.error(JSON.stringify({ event: 'analysis_error', traceId, accountId, error: errMsg }))
-    await supabase.from('accounts').update({
-      status: 'error',
-      error_message: GENERIC_ERROR_MESSAGE,
-    }).eq('id', accountId)
+    try {
+      await supabase.from('accounts').update({
+        status: 'error',
+        error_message: errMsg?.slice?.(0, 500) ?? GENERIC_ERROR_MESSAGE,
+      }).eq('id', accountId)
+    } catch (updateErr) {
+      console.error(JSON.stringify({ event: 'analysis_error_update_failed', traceId, accountId }))
+    }
   }
 }
 
@@ -277,7 +266,9 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
 async function searchBrave(companyName: string, onboardingData: any, traceId: string) {
   if (!BRAVE_API_KEY) return { results: [], urls: [] }
   const year = new Date().getFullYear()
-  const queries = [
+  const offers = (onboardingData.offers || []).slice(0, 2).join(' ')
+  const sectors = (onboardingData.sectors || []).slice(0, 2).join(' ')
+  const baseQueries = [
     `${companyName} stratégie transformation digitale ${year}`,
     `${companyName} projet cloud IA data cybersécurité programme investissement IT`,
     `${companyName} recrutement DSI CTO nomination ${year} actualités`,
@@ -285,6 +276,10 @@ async function searchBrave(companyName: string, onboardingData: any, traceId: st
     `${companyName} prestataire ESN intégrateur Capgemini Sopra Atos Accenture Devoteam`,
     `${companyName} appel offres marché IT prestation informatique ${year}`,
   ]
+  const queries = [...baseQueries]
+  if (offers) queries.push(`${companyName} ${offers} recrutement projet ${year}`)
+  if (sectors) queries.push(`${companyName} ${sectors} transformation IT digital`)
+  if (onboardingData.mainChallenge) queries.push(`${companyName} ${onboardingData.mainChallenge} DSI décideurs`)
   let allResults: any[] = []
   try {
     const batchSize = 3
@@ -507,8 +502,15 @@ Pour chaque angle, définir :
 ÉTAPE 5 — CONSTRUIRE LE PLAN D'ACTION
 Adapter le plan selon le cycle de vente de l'ESN :
 - Chaque semaine = actions concrètes assignables
-- Chaque action = un verbe + une cible + un canal (email, LinkedIn, téléphone)
+- Chaque action = un verbe + une cible + un canal (email, LinkedIn, téléphone) + responsable suggéré + outil + deadline + KPI
 - Intégrer des points de décision : si réponse → action A, si silence → action B
+- Différencier PME/ETI (actions directes, cycle court) vs grand groupe (référencement, multi-thread)
+- S'appuyer sur la BASE DE CONNAISSANCES ESN (RAG) et l'historique du compte pour ne pas répéter ce qui a déjà été fait
+
+ÉTAPE 6 — ENGAGEMENT DE CROISSANCE
+- Évaluer le potentiel d'engagement : GO / NO GO avec justification
+- Recommandation explicite : prioritaire ou non, selon les réponses au questionnaire (défi principal, cible, ESN en place)
+- Si l'utilisateur a renseigné un service ESN prioritaire, une cible ou un historique, ces éléments doivent apparaître explicitement dans les recommandations
 
 ══════════════════════════════════════
 CARTOGRAPHIE DES CONTACTS
@@ -578,22 +580,30 @@ FORMAT DE SORTIE — JSON STRICT
 Réponds UNIQUEMENT en JSON valide. Pas de texte avant/après. Pas de backticks markdown.
 Tous les textes en français.
 
-RÈGLES SUR LE NOM DE L'ENTREPRISE :
-- Si le nom contient une faute d'orthographe, corrige-le silencieusement.
-- Si le nom est ambigu, choisis la plus grande/connue.
-- Indique TOUJOURS le nom exact dans "companyNameCorrected".
-- Si aucune entreprise trouvée → "notFound": true + "suggestions": [2-3 noms proches].`
+RÈGLES SUR LE NOM DE L'ENTREPRISE (affichage uniquement — ne jamais faire échouer l'analyse) :
+- Si le nom contient une faute d'orthographe, corrige-le silencieusement et mets le nom corrigé dans "companyNameCorrected".
+- Si le nom est ambigu, choisis la plus grande/connue et indique-la dans "companyNameCorrected".
+- Tu dois TOUJOURS retourner un JSON complet et valide. Même si le nom est mal orthographié ou peu reconnu, produis une analyse "best effort" avec les données disponibles.
+- "notFound": true uniquement si vraiment aucune entreprise ne correspond ; dans ce cas mets "suggestions": [2-3 noms proches] et remplis quand même sector, contacts, angles, actionPlan avec des valeurs plausibles (ex. secteur "Non identifié", contacts types). Ne laisse jamais de champs vides qui feraient échouer le parsing.`
 
   const userPrompt = `Analyse le compte "${companyName}".
-${ragContext ? `\nBASE DE CONNAISSANCES ESN :\n${ragContext}\n` : ''}
+${ragContext ? `\nBASE DE CONNAISSANCES ESN (à utiliser pour adapter le plan et éviter de répéter ce qui a déjà été fait) :\n${ragContext}\n` : ''}
 
-DONNÉES WEB (Brave Search) :
-${JSON.stringify(braveResults.results?.slice(0, 5), null, 2)}
+DONNÉES WEB (Brave Search) — utilise TOUS les résultats pour sourcer tes réponses :
+${JSON.stringify(braveResults.results?.slice(0, 15), null, 2)}
 
-CONTENU SCRAPÉ (Firecrawl) :
-${scrapedContent.slice(0, 15000)}
+CONTENU SCRAPÉ (Firecrawl) — utilise l'intégralité pour extraire noms de programmes/projets, filiales, BU, signaux :
+${scrapedContent.slice(0, 22000)}
 
-Tu peux déduire les infos légales / secteur / effectifs depuis ces sources. Produis un JSON avec EXACTEMENT cette structure :
+INSTRUCTIONS OBLIGATOIRES :
+1. Toutes les données scrapées doivent apparaître dans le rendu : ne pas se limiter à une sélection partielle. Extraire et afficher explicitement les noms de programmes et de projets détectés dans les fiches de poste et sources web (champ programNames).
+2. Cartographie exhaustive : lister TOUTES les entités du groupe (filiales, BU, start-ups internes), pas seulement le groupe global (champ entitiesExhaustive).
+3. Chaque contact doit être enrichi : poste, entité, localisation, signaux LinkedIn récents si déductibles, niveau d'accessibilité (1-5). Minimum 10 contacts enrichis.
+4. Le plan d'actions doit être construit sur la base du questionnaire onboarding et de la mémoire RAG — pas de manière générique. Si ESN prioritaire, cible ou historique sont renseignés, ils doivent apparaître dans les recommandations.
+5. Produis les 4 sections dédiées : commentOuvrirCompte, offresAConstruire, planHebdomadaire, evaluationCompte (GO/NO GO avec justification).
+6. Chaque action du plan doit avoir : responsable suggéré, outil, deadline, KPI. Actions graduelles et séquencées selon la méthodologie (fiche identité → parties prenantes → besoins → concurrents → scoring → actions).
+
+Produis un JSON avec EXACTEMENT la structure suivante (tous les champs sont requis, utiliser [] ou "" si non détecté) :
 {
   "companyNameCorrected": "Nom exact et correct de l'entreprise",
   "notFound": false,
@@ -604,6 +614,8 @@ Tu peux déduire les infos légales / secteur / effectifs depuis ces sources. Pr
   "headquarters": "Ville du siège",
   "website": "URL du site",
   "subsidiaries": ["Filiale 1", "Filiale 2"],
+  "programNames": ["Nom programme ou projet détecté dans offres d'emploi / web"],
+  "entitiesExhaustive": [{"name": "Nom entité", "type": "filiale|BU|startup_interne|groupe", "parent": "Parent si applicable"}],
   "itChallenges": ["Enjeu 1", "Enjeu 2", "Enjeu 3", "Enjeu 4"],
   "recentSignals": ["Signal 1", "Signal 2", "Signal 3", "Signal 4"],
   "priorityScore": 7,
@@ -613,8 +625,11 @@ Tu peux déduire les infos légales / secteur / effectifs depuis ces sources. Pr
       "name": "Prénom Nom",
       "title": "Poste",
       "entity": "Filiale/BU",
+      "location": "Ville ou site",
       "role": "sponsor",
       "priority": 1,
+      "accessibilityLevel": 3,
+      "linkedinSignals": "Signaux récents si déductibles",
       "summary": "Résumé profil",
       "whyContact": "Pourquoi le contacter",
       "email": "prenom.nom@entreprise.com",
@@ -626,21 +641,34 @@ Tu peux déduire les infos légales / secteur / effectifs depuis ces sources. Pr
     }
   ],
   "angles": [
-    {
-      "title": "Angle 1 — Titre",
-      "description": "Description de l'angle",
-      "entry": "Point d'entrée → escalade"
-    }
+    {"title": "Angle 1 — Titre", "description": "Description", "entry": "Point d'entrée → escalade"}
   ],
   "actionPlan": {
     "strategyType": "bottom_up",
     "strategyJustification": "Justification",
     "weeks": [
-      {"week": 1, "title": "Premier contact", "items": [{"text": "Action", "done": false}]},
-      {"week": 2, "title": "Relances", "items": [{"text": "Action", "done": false}]},
-      {"week": 3, "title": "Proposition", "items": [{"text": "Action", "done": false}]},
-      {"week": 4, "title": "Escalade/pivot", "items": [{"text": "Action", "done": false}]}
+      {"week": 1, "title": "Premier contact", "items": [{"text": "Action", "done": false, "responsable": "Rôle", "outil": "Email/LinkedIn/Tel", "deadline": "J+3", "kpi": "Taux ouverture"}]},
+      {"week": 2, "title": "Relances", "items": [{"text": "Action", "done": false, "responsable": "", "outil": "", "deadline": "", "kpi": ""}]},
+      {"week": 3, "title": "Proposition", "items": [{"text": "Action", "done": false, "responsable": "", "outil": "", "deadline": "", "kpi": ""}]},
+      {"week": 4, "title": "Escalade/pivot", "items": [{"text": "Action", "done": false, "responsable": "", "outil": "", "deadline": "", "kpi": ""}]}
     ]
+  },
+  "commentOuvrirCompte": {
+    "strategy": "Stratégie d'entrée détaillée selon profil (taille, public/privé, référencement, ESN en place)",
+    "entryPoints": [{"label": "Porte d'entrée", "justification": "Pourquoi"}]
+  },
+  "offresAConstruire": {
+    "offers": [{"offer": "Offre ESN à proposer", "order": 1, "interlocutor": "Pour quel contact", "pitch": "Argumentaire adapté"}]
+  },
+  "planHebdomadaire": {
+    "methodology": "Fiche identité → parties prenantes → besoins → concurrents → scoring → actions",
+    "weeks": [{"week": 1, "theme": "Thème", "actions": ["Action 1", "Action 2"]}]
+  },
+  "evaluationCompte": {
+    "goNoGo": "GO ou NO GO",
+    "scoreGlobal": 7,
+    "justification": "Justification claire basée sur données et questionnaire",
+    "recommandation": "Compte prioritaire ou non, prochaines étapes"
   }
 }
 
@@ -685,12 +713,18 @@ Génère :
     }
 
     parsed.subsidiaries = Array.isArray(parsed.subsidiaries) ? parsed.subsidiaries : []
+    parsed.programNames = Array.isArray(parsed.programNames) ? parsed.programNames : []
+    parsed.entitiesExhaustive = Array.isArray(parsed.entitiesExhaustive) ? parsed.entitiesExhaustive : []
     parsed.itChallenges = Array.isArray(parsed.itChallenges) ? parsed.itChallenges : []
     parsed.recentSignals = Array.isArray(parsed.recentSignals) ? parsed.recentSignals : []
     parsed.contacts = Array.isArray(parsed.contacts) ? parsed.contacts : []
     parsed.angles = Array.isArray(parsed.angles) ? parsed.angles : []
     parsed.priorityScore = Math.min(10, Math.max(1, parseInt(parsed.priorityScore) || 5))
     if (parsed.actionPlan && !Array.isArray(parsed.actionPlan.weeks)) parsed.actionPlan.weeks = []
+    parsed.commentOuvrirCompte = parsed.commentOuvrirCompte && typeof parsed.commentOuvrirCompte === 'object' ? parsed.commentOuvrirCompte : { strategy: '', entryPoints: [] }
+    parsed.offresAConstruire = parsed.offresAConstruire && typeof parsed.offresAConstruire === 'object' ? parsed.offresAConstruire : { offers: [] }
+    parsed.planHebdomadaire = parsed.planHebdomadaire && typeof parsed.planHebdomadaire === 'object' ? parsed.planHebdomadaire : { methodology: '', weeks: [] }
+    parsed.evaluationCompte = parsed.evaluationCompte && typeof parsed.evaluationCompte === 'object' ? parsed.evaluationCompte : { goNoGo: '', scoreGlobal: 5, justification: '', recommandation: '' }
     parsed.companyNameCorrected = parsed.companyNameCorrected || companyName
     parsed.notFound = !!parsed.notFound
     parsed.suggestions = Array.isArray(parsed.suggestions) ? parsed.suggestions : []
@@ -1129,32 +1163,38 @@ function generateFallbackAnalysis(companyName: string, onboardingData: any) {
       { title: 'Angle 2 — Cloud Migration', description: 'Migration cloud en cours, besoin d\'architectes.', entry: 'Resp. Cloud → Achats' },
       { title: 'Angle 3 — Cybersécurité', description: 'Conformité réglementaire, budget dédié.', entry: 'RSSI → Achats' },
     ],
+    programNames: [],
+    entitiesExhaustive: [{ name: 'Groupe', type: 'groupe', parent: null }, { name: 'DSI', type: 'BU', parent: 'Groupe' }],
     actionPlan: {
       strategyType: 'bottom_up',
       strategyJustification: 'Entrer par les opérationnels techniques, démontrer la valeur, puis escalader vers le DSI et les achats.',
       weeks: [
         { week: 1, title: 'Premier contact', items: [
-          { text: 'Contacter Head of Data — Email + LinkedIn', done: false },
-          { text: 'Envoyer demande connexion au DSI', done: false },
-          { text: 'Contacter Resp. Cloud — Email', done: false },
+          { text: 'Contacter Head of Data — Email + LinkedIn', done: false, responsable: 'Commercial', outil: 'Email', deadline: 'J+3', kpi: 'Taux ouverture' },
+          { text: 'Envoyer demande connexion au DSI', done: false, responsable: '', outil: 'LinkedIn', deadline: '', kpi: '' },
+          { text: 'Contacter Resp. Cloud — Email', done: false, responsable: '', outil: '', deadline: '', kpi: '' },
         ]},
         { week: 2, title: 'Relances + élargissement', items: [
-          { text: 'Relance Head of Data si pas de réponse (J+5)', done: false },
-          { text: 'Contacter DSI par email direct', done: false },
-          { text: 'Engager Dir. Achats si réponse opérationnels', done: false },
+          { text: 'Relance Head of Data si pas de réponse (J+5)', done: false, responsable: '', outil: '', deadline: '', kpi: '' },
+          { text: 'Contacter DSI par email direct', done: false, responsable: '', outil: '', deadline: '', kpi: '' },
+          { text: 'Engager Dir. Achats si réponse opérationnels', done: false, responsable: '', outil: '', deadline: '', kpi: '' },
         ]},
         { week: 3, title: 'Proposition de valeur', items: [
-          { text: 'Envoyer proposition de profils si RDV obtenu', done: false },
-          { text: 'Partager une référence client pertinente', done: false },
-          { text: 'Proposer un call de 15 min aux répondants', done: false },
+          { text: 'Envoyer proposition de profils si RDV obtenu', done: false, responsable: '', outil: '', deadline: '', kpi: '' },
+          { text: 'Partager une référence client pertinente', done: false, responsable: '', outil: '', deadline: '', kpi: '' },
+          { text: 'Proposer un call de 15 min aux répondants', done: false, responsable: '', outil: '', deadline: '', kpi: '' },
         ]},
         { week: 4, title: 'Escalade ou pivot', items: [
-          { text: 'Si silence total → pivoter vers Angle 2', done: false },
-          { text: 'Si conversation ouverte → fixer RDV qualification', done: false },
-          { text: 'Si RDV obtenu → préparer le push profil', done: false },
+          { text: 'Si silence total → pivoter vers Angle 2', done: false, responsable: '', outil: '', deadline: '', kpi: '' },
+          { text: 'Si conversation ouverte → fixer RDV qualification', done: false, responsable: '', outil: '', deadline: '', kpi: '' },
+          { text: 'Si RDV obtenu → préparer le push profil', done: false, responsable: '', outil: '', deadline: '', kpi: '' },
         ]},
       ],
     },
+    commentOuvrirCompte: { strategy: '[Démo] Adapter selon taille du compte et référencement.', entryPoints: [{ label: 'Opérationnels techniques', justification: 'Point d\'entrée le plus accessible.' }] },
+    offresAConstruire: { offers: [{ offer: mainOffer, order: 1, interlocutor: 'Head of Data / Resp. Cloud', pitch: 'Profils disponibles, référence client.' }] },
+    planHebdomadaire: { methodology: 'Fiche identité → parties prenantes → besoins → scoring → actions', weeks: [{ week: 1, theme: 'Premier contact', actions: ['Email + LinkedIn ciblés'] }, { week: 2, theme: 'Relances', actions: ['J+5'] }] },
+    evaluationCompte: { goNoGo: 'GO', scoreGlobal: 7, justification: '[Démo] Compte généré automatiquement.', recommandation: 'Prioriser les contacts opérationnels.' },
   }
 }
 

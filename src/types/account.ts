@@ -77,7 +77,7 @@ export interface ActionPlan {
 export interface ActionWeek {
   week: number;
   title: string;
-  items: { text: string; done: boolean }[];
+  items: { text: string; done: boolean; responsable?: string; outil?: string; deadline?: string; kpi?: string }[];
 }
 
 export interface UserCredits {

@@ -20,9 +20,9 @@ export function useAccounts() {
   return { accounts, isLoading, error, refetch };
 }
 
-export function useAccount(id: string | undefined) {
+export function useAccount(id: string | undefined, options?: { refetchWhenAnalyzing?: boolean }) {
   const { user } = useAuth();
-  const { data: account, isLoading, error } = useQuery({
+  const { data: account, isLoading, error, refetch } = useQuery({
     queryKey: ['account', id],
     queryFn: async () => {
       if (!id) return null;
@@ -35,8 +35,11 @@ export function useAccount(id: string | undefined) {
       return data as AccountAnalysis;
     },
     enabled: !!user && !!id,
+    refetchInterval: options?.refetchWhenAnalyzing
+      ? (query) => (query.state.data as AccountAnalysis)?.status === 'analyzing' ? 2000 : false
+      : undefined,
   });
-  return { account, isLoading, error };
+  return { account, isLoading, error, refetch };
 }
 
 export function useAccountContacts(accountId: string | undefined) {
