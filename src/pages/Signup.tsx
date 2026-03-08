@@ -51,8 +51,8 @@ export default function Signup() {
         toast({ title: "Erreur d'inscription", description: errMsg || "Une erreur est survenue.", variant: "destructive" });
       }
     } else if (session) {
-      // Session créée (confirmation email désactivée) → aller directement à l'onboarding, pas à /login
-      navigate("/onboarding", { replace: true });
+      // Session créée → page de bienvenue puis questionnaire
+      navigate("/welcome", { replace: true });
     } else {
       toast({
         title: "Vérifiez votre email",

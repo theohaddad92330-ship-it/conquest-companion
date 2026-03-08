@@ -1,7 +1,10 @@
+import { useState, useEffect } from "react";
 import { Link, Navigate, useLocation } from "react-router-dom";
 import { Zap, Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
+
+const MAX_PROFILE_REFETCH_ATTEMPTS = 3;
 
 function LoadingScreen() {
   return (
@@ -20,28 +23,38 @@ function LoadingScreen() {
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading: authLoading } = useAuth();
-  const { profile, loading: profileLoading } = useProfile();
+  const { profile, loading: profileLoading, refetch } = useProfile();
   const location = useLocation();
+  const [refetchAttempts, setRefetchAttempts] = useState(0);
 
-  // Ne jamais rediriger pendant le chargement : spinner logo + Loader2, jamais de page blanche
+  // Refetch du profil quand il est null après connexion (évite redirection à tort avant que le fetch ne revienne)
+  useEffect(() => {
+    if (!user || authLoading || profileLoading || profile !== null || refetchAttempts >= MAX_PROFILE_REFETCH_ATTEMPTS) {
+      return;
+    }
+    refetch().then(() => setRefetchAttempts((a) => a + 1));
+  }, [user, authLoading, profileLoading, profile, refetchAttempts, refetch]);
+
+  // Ne jamais rediriger pendant le chargement
   if (authLoading === true || profileLoading === true) {
     return <LoadingScreen />;
   }
 
   if (!user) return <Navigate to="/login" replace />;
 
-  // Pages autorisées sans avoir terminé le questionnaire
   const isOnboardingFlow = ["/welcome", "/onboarding"].includes(location.pathname);
 
-  // Connecté mais onboarding non terminé → onboarding
+  // Connecté mais onboarding non terminé → welcome (puis questionnaire)
   if (!isOnboardingFlow && profile && profile.onboarding_completed === false) {
-    return <Navigate to="/onboarding" replace />;
+    return <Navigate to="/welcome" replace />;
   }
-  // Profil absent (trigger pas encore exécuté) → onboarding pour créer/compléter le profil
+  // Profil absent après plusieurs tentatives de refetch → onboarding pour créer le profil
   if (!isOnboardingFlow && profile === null) {
-    return <Navigate to="/onboarding" replace />;
+    if (refetchAttempts >= MAX_PROFILE_REFETCH_ATTEMPTS) {
+      return <Navigate to="/onboarding" replace />;
+    }
+    return <LoadingScreen />;
   }
 
-  // Connecté, profil chargé, onboarding fait → accès
   return <>{children}</>;
 }

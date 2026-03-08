@@ -37,7 +37,7 @@ export default function Login() {
       if (data?.onboarding_completed === true) {
         navigate("/dashboard", { replace: true });
       } else {
-        navigate("/onboarding", { replace: true });
+        navigate("/welcome", { replace: true });
       }
     })();
     return () => { cancelled = true; };
