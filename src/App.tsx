@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { ProfileProvider } from "@/contexts/ProfileContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 
 // Public pages
@@ -17,6 +18,7 @@ import Welcome from "./pages/Welcome";
 import Onboarding from "./pages/Onboarding";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
+import AuthCallback from "./pages/AuthCallback";
 
 // App pages (with sidebar layout)
 import Dashboard from "./pages/Dashboard";
@@ -43,6 +45,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
+          <ProfileProvider>
           <Routes>
             {/* Public routes — no sidebar */}
             <Route path="/" element={<Landing />} />
@@ -52,6 +55,7 @@ const App = () => (
             <Route path="/signup" element={<Signup />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
 
             {/* Post-signup routes */}
             <Route path="/welcome" element={<ProtectedRoute><Welcome /></ProtectedRoute>} />
@@ -76,6 +80,7 @@ const App = () => (
 
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </ProfileProvider>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>

@@ -1,83 +1,123 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+const MAX_BODY_BYTES = 100_000
+const GENERIC_ERROR_MESSAGE = 'Une erreur est survenue'
+
+function getCorsHeaders(): Record<string, string> {
+  const origin = Deno.env.get('ALLOWED_ORIGINS')?.trim()
+  return {
+    'Access-Control-Allow-Origin': origin || '*',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Content-Type': 'application/json',
+  }
 }
 
-// API Keys — configurées dans Supabase Dashboard > Edge Functions > Secrets
-// En attendant les vraies clés, la fonction utilise un mode fallback
-const BRAVE_API_KEY = Deno.env.get('BRAVE_API_KEY') || ''
-const FIRECRAWL_API_KEY = Deno.env.get('FIRECRAWL_API_KEY') || ''
-const PAPPERS_API_KEY = Deno.env.get('PAPPERS_API_KEY') || ''
+function jsonResponse(data: unknown, status: number, headers?: Record<string, string>) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...getCorsHeaders(), ...headers },
+  })
+}
+
+// API Keys — Supabase Dashboard > Edge Functions > Secrets (noms avec ou sans espaces)
+function getEnvKey(name: string, altName: string): string {
+  return Deno.env.get(name) || Deno.env.get(altName) || ''
+}
+const BRAVE_API_KEY = getEnvKey('BRAVE_API_KEY', 'BRAVE API KEY')
+const FIRECRAWL_API_KEY = getEnvKey('FIRECRAWL_API_KEY', 'FIRECRAWL API KEY')
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
-const APIFY_API_TOKEN = Deno.env.get('APIFY_API_TOKEN') || ''
+const APIFY_API_TOKEN = getEnvKey('APIFY_API_TOKEN', 'APIFY API KEY')
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
+  if (req.method === 'OPTIONS') return new Response(null, { headers: getCorsHeaders() })
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
-    // Auth
     const authHeader = req.headers.get('Authorization')
-    if (!authHeader) throw new Error('Non authentifié')
-    const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''))
-    if (authError || !user) throw new Error('Non authentifié')
+    if (!authHeader?.startsWith('Bearer ')) {
+      return jsonResponse({ error: 'Non authentifié' }, 401)
+    }
+    const { data: { user }, error: authError } = await supabase.auth.getUser(
+      authHeader.replace('Bearer ', '').trim()
+    )
+    if (authError || !user) {
+      return jsonResponse({ error: 'Non authentifié' }, 401)
+    }
 
-    const body = await req.json()
+    const rawBody = await req.text()
+    if (rawBody.length > MAX_BODY_BYTES) {
+      return jsonResponse({ error: 'Payload trop volumineux' }, 400)
+    }
+    let body: { companyName?: unknown; userContext?: unknown }
+    try {
+      body = JSON.parse(rawBody) as { companyName?: unknown; userContext?: unknown }
+    } catch {
+      return jsonResponse({ error: 'JSON invalide' }, 400)
+    }
+
     const companyName = typeof body?.companyName === 'string' ? body.companyName.trim() : ''
     const userContext = typeof body?.userContext === 'string' ? body.userContext.slice(0, 2000) : null
 
-    if (!companyName) throw new Error('companyName requis')
-    if (companyName.length > 200) throw new Error('companyName trop long')
+    if (!companyName) return jsonResponse({ error: 'companyName requis' }, 400)
+    if (companyName.length > 200) return jsonResponse({ error: 'companyName trop long' }, 400)
 
-    // Vérifier le rate limit (anti-spam)
-    const { data: rateLimitOk } = await supabase.rpc('check_rate_limit', { p_user_id: user.id, p_max_per_hour: 10 })
+    const { data: rateLimitOk } = await supabase.rpc('check_rate_limit', {
+      p_user_id: user.id,
+      p_max_per_hour: 10,
+    })
     if (rateLimitOk === false) {
-      throw new Error('Trop de recherches en peu de temps. Attendez quelques minutes.')
+      return jsonResponse(
+        { error: 'Trop de recherches en peu de temps. Réessayez dans quelques minutes.' },
+        429,
+        { 'Retry-After': '300' }
+      )
     }
 
-    // Vérifier ET consommer un crédit en une seule transaction
-    const { data: creditOk } = await supabase.rpc('check_and_increment_accounts_used', { p_user_id: user.id })
+    const { data: creditOk } = await supabase.rpc('check_and_increment_accounts_used', {
+      p_user_id: user.id,
+    })
     if (creditOk === false) {
-      throw new Error('Limite de crédits atteinte. Passez à un plan supérieur.')
+      return jsonResponse(
+        { error: 'Limite de crédits atteinte. Passez à un plan supérieur.' },
+        403
+      )
     }
 
-    // Créer le compte en BDD
     const { data: account, error: insertError } = await supabase
       .from('accounts')
-      .insert({ user_id: user.id, company_name: companyName, user_context: userContext || null, status: 'analyzing' })
+      .insert({
+        user_id: user.id,
+        company_name: companyName,
+        user_context: userContext ?? null,
+        status: 'analyzing',
+      })
       .select()
       .single()
-    if (insertError) throw insertError
+    if (insertError) {
+      console.error('analyze-account insert error:', insertError.message)
+      return jsonResponse({ error: GENERIC_ERROR_MESSAGE }, 500)
+    }
 
-    // Récupérer le profil de l'utilisateur
     const { data: profile } = await supabase
       .from('profiles')
       .select('*')
       .eq('user_id', user.id)
       .single()
-    const onboardingData = profile?.onboarding_data || {}
+    const onboardingData = profile?.onboarding_data ?? {}
 
-    // Lancer le traitement en arrière-plan
     EdgeRuntime.waitUntil(
       processAnalysis(supabase, account.id, user.id, companyName, userContext, onboardingData)
     )
 
-    return new Response(
-      JSON.stringify({ accountId: account.id, status: 'analyzing' }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
-  } catch (error: any) {
-    const message = error?.message && typeof error.message === 'string' ? error.message : 'Erreur serveur'
-    return new Response(
-      JSON.stringify({ error: message }),
-      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+    return jsonResponse({ accountId: account.id, status: 'analyzing' }, 200)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'unknown'
+    console.error('analyze-account error:', msg)
+    return jsonResponse({ error: GENERIC_ERROR_MESSAGE }, 500)
   }
 })
 
@@ -89,26 +129,22 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
   console.log(JSON.stringify({ event: 'analysis_start', traceId, accountId, companyName, userId }))
 
   try {
-    // ÉTAPE 1 — Recherche web
-    const braveResults = await searchBrave(companyName)
+    // ÉTAPE 1 — Brave Search
+    const braveResults = await searchBrave(companyName, traceId)
     console.log(JSON.stringify({ event: 'brave_done', traceId, resultsCount: braveResults.results?.length || 0 }))
 
-    // ÉTAPE 2 — Scraping pages
-    const scrapedContent = await scrapePages(braveResults.urls?.slice(0, 5) || [])
+    // ÉTAPE 2 — Scraping pages (3–5 premières URLs Brave)
+    const scrapedContent = await scrapePages(braveResults.urls?.slice(0, 5) || [], traceId)
     console.log(JSON.stringify({ event: 'firecrawl_done', traceId, contentLength: scrapedContent.length }))
 
-    // ÉTAPE 3 — Données entreprise FR
-    const pappersData = await searchPappers(companyName)
-    console.log(JSON.stringify({ event: 'pappers_done', traceId, found: !!pappersData }))
-
-    // Récupérer le contexte RAG
+    // Contexte RAG (base de connaissances ESN)
     const ragContext = await searchRAG(supabase, companyName)
 
-    // ÉTAPE 4 — Analyse IA complète (Claude)
-    const analysis = await analyzeWithClaude(companyName, braveResults, scrapedContent, pappersData, userContext, onboardingData, ragContext)
-    console.log(JSON.stringify({ event: 'claude_done', traceId, contactsCount: analysis.contacts?.length || 0, anglesCount: analysis.angles?.length || 0 }))
+    // ÉTAPE 3 — Analyse IA complète (Claude)
+    const analysis = await analyzeWithClaude(companyName, braveResults, scrapedContent, userContext, onboardingData, ragContext, traceId)
+    console.log(JSON.stringify({ event: 'claude_analysis_done', traceId, contactsCount: analysis.contacts?.length || 0, anglesCount: analysis.angles?.length || 0 }))
 
-    // Sauvegarder le compte enrichi
+    // ÉTAPE 4 — Sauvegarde intermédiaire (fiche + angles + plan)
     await supabase.from('accounts').update({
       sector: analysis.sector,
       employees: analysis.employees,
@@ -124,12 +160,35 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
       status: 'analyzing',
     }).eq('id', accountId)
 
-    // ===== ÉTAPE 5 — SCRAPING LINKEDIN (Apify) =====
+    if (analysis.angles?.length) {
+      await supabase.from('attack_angles').insert(
+        analysis.angles.map((a: any, i: number) => ({
+          account_id: accountId,
+          user_id: userId,
+          title: a.title,
+          description: a.description,
+          entry_point: a.entry,
+          is_recommended: i === 0,
+          rank: i + 1,
+        }))
+      )
+    }
+    if (analysis.actionPlan) {
+      await supabase.from('action_plans').insert({
+        account_id: accountId,
+        user_id: userId,
+        strategy_type: analysis.actionPlan.strategyType || 'multi_thread',
+        strategy_justification: analysis.actionPlan.strategyJustification,
+        weeks: analysis.actionPlan.weeks || [],
+      })
+    }
+
+    // ÉTAPE 5 — Scraping LinkedIn (Apify)
     let finalContacts: any[] = []
 
     if (APIFY_API_TOKEN) {
       // 5a. Scraper la page entreprise (infos complémentaires)
-      const companyData = await scrapeLinkedInCompany(companyName)
+      const companyData = await scrapeLinkedInCompany(companyName, traceId)
       
       // Si on a des infos complémentaires, mettre à jour le compte
       if (companyData) {
@@ -142,19 +201,20 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
         }
       }
 
-      // 5b. Scraper les contacts LinkedIn
-      const linkedinContacts = await scrapeLinkedInPeople(companyName, onboardingData, 100)
+      // 5b. Scraper les contacts LinkedIn (50–100, filtrés par personas)
+      const linkedinContacts = await scrapeLinkedInPeople(companyName, onboardingData, 100, traceId)
 
       if (linkedinContacts.length > 0) {
-        // 5c. Enrichir les contacts LinkedIn avec Claude (rôles, priorités, messages)
+        // ÉTAPE 6 — Enrichissement contacts avec Claude
         finalContacts = await enrichLinkedInContactsWithClaude(
           linkedinContacts,
           companyName,
           analysis,
-          onboardingData
+          onboardingData,
+          traceId
         )
+        console.log(JSON.stringify({ event: 'claude_enrichment_done', traceId }))
       } else {
-        // Fallback : utiliser les contacts générés par l'analyse IA initiale
         finalContacts = analysis.contacts || []
       }
       console.log(JSON.stringify({ event: 'apify_done', traceId, linkedinContactsCount: finalContacts.length }))
@@ -163,7 +223,7 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
       finalContacts = analysis.contacts || []
     }
 
-    // Sauvegarder les contacts (vrais LinkedIn ou IA)
+    // ÉTAPE 7 — Sauvegarde finale (contacts + status completed)
     if (finalContacts.length > 0) {
       await supabase.from('contacts').insert(
         finalContacts.map((c: any, i: number) => ({
@@ -187,32 +247,6 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
       )
     }
 
-    // Sauvegarder les angles d'attaque
-    if (analysis.angles?.length > 0) {
-      await supabase.from('attack_angles').insert(
-        analysis.angles.map((a: any, i: number) => ({
-          account_id: accountId,
-          user_id: userId,
-          title: a.title,
-          description: a.description,
-          entry_point: a.entry,
-          is_recommended: i === 0,
-          rank: i + 1,
-        }))
-      )
-    }
-
-    // Sauvegarder le plan d'action
-    if (analysis.actionPlan) {
-      await supabase.from('action_plans').insert({
-        account_id: accountId,
-        user_id: userId,
-        strategy_type: analysis.actionPlan.strategyType || 'multi_thread',
-        strategy_justification: analysis.actionPlan.strategyJustification,
-        weeks: analysis.actionPlan.weeks || [],
-      })
-    }
-
     // Estimation grossière des coûts après l'analyse
     const estimatedCost = 0.003 * (scrapedContent.length / 1000)
       + 0.005 * (braveResults.results?.length || 0)
@@ -226,11 +260,12 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
     }).eq('id', accountId)
 
     console.log(JSON.stringify({ event: 'analysis_complete', traceId, accountId }))
-  } catch (error: any) {
-    console.error(JSON.stringify({ event: 'analysis_error', traceId, accountId, error: error.message }))
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : 'unknown'
+    console.error(JSON.stringify({ event: 'analysis_error', traceId, accountId, error: errMsg }))
     await supabase.from('accounts').update({
       status: 'error',
-      error_message: error.message,
+      error_message: GENERIC_ERROR_MESSAGE,
     }).eq('id', accountId)
   }
 }
@@ -239,45 +274,46 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
 // FONCTIONS API EXTERNES
 // ============================================
 
-async function searchBrave(query: string) {
+async function searchBrave(query: string, traceId: string) {
   if (!BRAVE_API_KEY) return { results: [], urls: [] }
   try {
-    const res = await fetch(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query + ' actualités projets IT')}`, {
-      headers: { 'X-Subscription-Token': BRAVE_API_KEY },
-    })
+    const res = await fetch(
+      `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query + ' actualités projets IT recrutement')}`,
+      {
+        headers: { 'X-Subscription-Token': BRAVE_API_KEY },
+        signal: AbortSignal.timeout(10000),
+      }
+    )
     const data = await res.json()
     const results = data.web?.results?.slice(0, 10) || []
     return {
       results: results.map((r: any) => ({ title: r.title, description: r.description, url: r.url })),
       urls: results.map((r: any) => r.url),
     }
-  } catch { return { results: [], urls: [] } }
+  } catch (err) {
+    console.error(JSON.stringify({ event: 'brave_error', traceId, error: err instanceof Error ? err.message : 'unknown' }))
+    return { results: [], urls: [] }
+  }
 }
 
-async function scrapePages(urls: string[]) {
+async function scrapePages(urls: string[], traceId: string) {
   if (!FIRECRAWL_API_KEY || urls.length === 0) return ''
-  try {
-    const contents: string[] = []
-    for (const url of urls.slice(0, 3)) {
+  const contents: string[] = []
+  for (const url of urls.slice(0, 5)) {
+    try {
       const res = await fetch('https://api.firecrawl.dev/v1/scrape', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${FIRECRAWL_API_KEY}` },
         body: JSON.stringify({ url, formats: ['markdown'] }),
+        signal: AbortSignal.timeout(10000),
       })
       const data = await res.json()
       if (data.data?.markdown) contents.push(data.data.markdown.slice(0, 3000))
+    } catch (err) {
+      console.error(JSON.stringify({ event: 'firecrawl_error', traceId, url: url.slice(0, 50), error: err instanceof Error ? err.message : 'unknown' }))
     }
-    return contents.join('\n\n---\n\n')
-  } catch { return '' }
-}
-
-async function searchPappers(companyName: string) {
-  if (!PAPPERS_API_KEY) return null
-  try {
-    const res = await fetch(`https://api.pappers.fr/v2/recherche?api_token=${PAPPERS_API_KEY}&q=${encodeURIComponent(companyName)}&par_page=1`)
-    const data = await res.json()
-    return data.resultats?.[0] || null
-  } catch { return null }
+  }
+  return contents.join('\n\n---\n\n')
 }
 
 async function searchRAG(supabase: any, _query: string, category?: string): Promise<string> {
@@ -296,8 +332,7 @@ async function searchRAG(supabase: any, _query: string, category?: string): Prom
 // ANALYSE IA AVEC CLAUDE
 // ============================================
 
-async function analyzeWithClaude(companyName: string, braveResults: any, scrapedContent: string, pappersData: any, userContext: string | null, onboardingData: any, ragContext: string) {
-  // Si pas de clé API Claude → mode fallback avec données de démo
+async function analyzeWithClaude(companyName: string, braveResults: any, scrapedContent: string, userContext: string | null, onboardingData: any, ragContext: string, traceId: string) {
   if (!ANTHROPIC_API_KEY) {
     return generateFallbackAnalysis(companyName, onboardingData)
   }
@@ -335,16 +370,13 @@ RÈGLES SUR LE NOM DE L'ENTREPRISE :
   const userPrompt = `Analyse le compte "${companyName}".
 ${ragContext ? `\nBASE DE CONNAISSANCES ESN :\n${ragContext}\n` : ''}
 
-DONNÉES WEB :
+DONNÉES WEB (Brave Search) :
 ${JSON.stringify(braveResults.results?.slice(0, 5), null, 2)}
 
-CONTENU SCRAPÉ :
+CONTENU SCRAPÉ (Firecrawl) :
 ${scrapedContent.slice(0, 8000)}
 
-DONNÉES PAPPERS :
-${JSON.stringify(pappersData, null, 2)}
-
-Produis un JSON avec EXACTEMENT cette structure :
+Tu peux déduire les infos légales / secteur / effectifs depuis ces sources. Produis un JSON avec EXACTEMENT cette structure :
 {
   "companyNameCorrected": "Nom exact et correct de l'entreprise",
   "notFound": false,
@@ -397,55 +429,55 @@ Produis un JSON avec EXACTEMENT cette structure :
 
 Génère 5-8 contacts, 3 angles, et un plan de 4 semaines.`
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 8000,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }],
-    }),
-  })
-
-  const data = await res.json()
-  const text = data.content?.[0]?.text || '{}'
-  const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-
-  let parsed: any
   try {
-    parsed = JSON.parse(clean)
-  } catch (parseError) {
-    console.error('Claude JSON parse error:', parseError)
-    console.error('Raw response:', text.slice(0, 500))
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 8000,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+      }),
+      signal: AbortSignal.timeout(120000),
+    })
+
+    const data = await res.json()
+    const text = data.content?.[0]?.text || '{}'
+    const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+
+    let parsed: any
+    try {
+      parsed = JSON.parse(clean)
+    } catch (parseError) {
+      console.error(JSON.stringify({ event: 'claude_parse_error', traceId, rawPreview: text.slice(0, 300) }))
+      return generateFallbackAnalysis(companyName, onboardingData)
+    }
+
+    if (!parsed.sector && !parsed.itChallenges && !parsed.contacts) {
+      console.error(JSON.stringify({ event: 'claude_missing_fields', traceId, keys: Object.keys(parsed) }))
+      return generateFallbackAnalysis(companyName, onboardingData)
+    }
+
+    parsed.subsidiaries = Array.isArray(parsed.subsidiaries) ? parsed.subsidiaries : []
+    parsed.itChallenges = Array.isArray(parsed.itChallenges) ? parsed.itChallenges : []
+    parsed.recentSignals = Array.isArray(parsed.recentSignals) ? parsed.recentSignals : []
+    parsed.contacts = Array.isArray(parsed.contacts) ? parsed.contacts : []
+    parsed.angles = Array.isArray(parsed.angles) ? parsed.angles : []
+    parsed.priorityScore = Math.min(10, Math.max(1, parseInt(parsed.priorityScore) || 5))
+    if (parsed.actionPlan && !Array.isArray(parsed.actionPlan.weeks)) parsed.actionPlan.weeks = []
+    parsed.companyNameCorrected = parsed.companyNameCorrected || companyName
+    parsed.notFound = !!parsed.notFound
+    parsed.suggestions = Array.isArray(parsed.suggestions) ? parsed.suggestions : []
+    return parsed
+  } catch (err) {
+    console.error(JSON.stringify({ event: 'claude_analysis_error', traceId, error: err instanceof Error ? err.message : 'unknown' }))
     return generateFallbackAnalysis(companyName, onboardingData)
   }
-
-  if (!parsed.sector && !parsed.itChallenges && !parsed.contacts) {
-    console.error('Claude response missing critical fields:', Object.keys(parsed))
-    return generateFallbackAnalysis(companyName, onboardingData)
-  }
-
-  parsed.subsidiaries = Array.isArray(parsed.subsidiaries) ? parsed.subsidiaries : []
-  parsed.itChallenges = Array.isArray(parsed.itChallenges) ? parsed.itChallenges : []
-  parsed.recentSignals = Array.isArray(parsed.recentSignals) ? parsed.recentSignals : []
-  parsed.contacts = Array.isArray(parsed.contacts) ? parsed.contacts : []
-  parsed.angles = Array.isArray(parsed.angles) ? parsed.angles : []
-  parsed.priorityScore = Math.min(10, Math.max(1, parseInt(parsed.priorityScore) || 5))
-
-  if (parsed.actionPlan && !Array.isArray(parsed.actionPlan.weeks)) {
-    parsed.actionPlan.weeks = []
-  }
-
-  parsed.companyNameCorrected = parsed.companyNameCorrected || companyName
-  parsed.notFound = !!parsed.notFound
-  parsed.suggestions = Array.isArray(parsed.suggestions) ? parsed.suggestions : []
-
-  return parsed
 }
 
 // ============================================
@@ -456,18 +488,15 @@ Génère 5-8 contacts, 3 angles, et un plan de 4 semaines.`
  * Étape 4a — Scraper la page entreprise LinkedIn
  * Récupère : description, nombre d'employés, filiales, spécialités
  */
-async function scrapeLinkedInCompany(companyName: string): Promise<any> {
+async function scrapeLinkedInCompany(companyName: string, traceId: string): Promise<any> {
   if (!APIFY_API_TOKEN) return null
   try {
     const actorId = 'curious_coder~linkedin-company-scraper'
-    
     const runRes = await fetch(`https://api.apify.com/v2/acts/${actorId}/runs?token=${APIFY_API_TOKEN}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        queries: [companyName],
-        maxResults: 1,
-      }),
+      body: JSON.stringify({ queries: [companyName], maxResults: 1 }),
+      signal: AbortSignal.timeout(10000),
     })
     const runData = await runRes.json()
     const runId = runData?.data?.id
@@ -475,9 +504,12 @@ async function scrapeLinkedInCompany(companyName: string): Promise<any> {
 
     let status = 'RUNNING'
     let attempts = 0
-    while (status === 'RUNNING' && attempts < 30) {
+    const deadline = Date.now() + 180000
+    while (status === 'RUNNING' && attempts < 60 && Date.now() < deadline) {
       await new Promise(r => setTimeout(r, 3000))
-      const statusRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${APIFY_API_TOKEN}`)
+      const statusRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${APIFY_API_TOKEN}`, {
+        signal: AbortSignal.timeout(10000),
+      })
       const statusData = await statusRes.json()
       status = statusData?.data?.status || 'FAILED'
       attempts++
@@ -485,27 +517,30 @@ async function scrapeLinkedInCompany(companyName: string): Promise<any> {
 
     if (status !== 'SUCCEEDED') return null
 
-    const datasetRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${APIFY_API_TOKEN}`)
+    const datasetRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${APIFY_API_TOKEN}`, {
+      signal: AbortSignal.timeout(30000),
+    })
     const items = await datasetRes.json()
     return items?.[0] || null
-  } catch (error) {
-    console.error('Apify company scrape error:', error)
+  } catch (err) {
+    console.error(JSON.stringify({ event: 'apify_company_error', traceId, error: err instanceof Error ? err.message : 'unknown' }))
     return null
   }
 }
 
 /**
- * Étape 4b — Scraper les contacts LinkedIn du compte
+ * Étape 5b — Scraper les contacts LinkedIn (filtrés par personas, exclus excludedPersonas)
  */
 async function scrapeLinkedInPeople(
   companyName: string,
   onboardingData: any,
-  maxContacts: number = 100
+  maxContacts: number = 100,
+  traceId?: string
 ): Promise<any[]> {
   if (!APIFY_API_TOKEN) return []
   try {
     const personas = onboardingData.personas || ['DSI / CTO', 'Directeur de projet', 'Achats IT']
-    const excludedPersonas = onboardingData.excludedPersonas || ['Stagiaires', 'Marketing']
+    const excludedPersonas = onboardingData.excludedPersonas ?? ['Stagiaires', 'Marketing']
     
     const searchQueries = personas.map((persona: string) => {
       const cleanPersona = persona
@@ -527,8 +562,9 @@ async function scrapeLinkedInPeople(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         queries: searchQueries,
-        maxResults: Math.ceil(maxContacts / Math.max(searchQueries.length, 1)),
+        maxResults: Math.ceil(Math.min(maxContacts, 100) / Math.max(searchQueries.length, 1)),
       }),
+      signal: AbortSignal.timeout(10000),
     })
     const runData = await runRes.json()
     const runId = runData?.data?.id
@@ -536,9 +572,12 @@ async function scrapeLinkedInPeople(
 
     let status = 'RUNNING'
     let attempts = 0
-    while (status === 'RUNNING' && attempts < 60) {
+    const deadline = Date.now() + 180000
+    while (status === 'RUNNING' && attempts < 60 && Date.now() < deadline) {
       await new Promise(r => setTimeout(r, 3000))
-      const statusRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${APIFY_API_TOKEN}`)
+      const statusRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${APIFY_API_TOKEN}`, {
+        signal: AbortSignal.timeout(10000),
+      })
       const statusData = await statusRes.json()
       status = statusData?.data?.status || 'FAILED'
       attempts++
@@ -546,7 +585,9 @@ async function scrapeLinkedInPeople(
 
     if (status !== 'SUCCEEDED') return []
 
-    const datasetRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${APIFY_API_TOKEN}`)
+    const datasetRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${APIFY_API_TOKEN}`, {
+      signal: AbortSignal.timeout(30000),
+    })
     const items: any[] = await datasetRes.json()
 
     const filtered = items.filter((item: any) => {
@@ -569,8 +610,8 @@ async function scrapeLinkedInPeople(
     })
 
     return unique.slice(0, maxContacts)
-  } catch (error) {
-    console.error('Apify people search error:', error)
+  } catch (err) {
+    console.error(JSON.stringify({ event: 'apify_people_error', traceId: traceId || 'n/a', error: err instanceof Error ? err.message : 'unknown' }))
     return []
   }
 }
@@ -583,7 +624,8 @@ async function enrichLinkedInContactsWithClaude(
   linkedinContacts: any[],
   companyName: string,
   accountAnalysis: any,
-  onboardingData: any
+  onboardingData: any,
+  traceId: string
 ): Promise<any[]> {
   if (!ANTHROPIC_API_KEY || linkedinContacts.length === 0) {
     return linkedinContacts.map((c, i) => ({
@@ -670,6 +712,7 @@ Retourne un tableau JSON :
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
       }),
+      signal: AbortSignal.timeout(120000),
     })
 
     const data = await res.json()
@@ -677,7 +720,7 @@ Retourne un tableau JSON :
     const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
     return JSON.parse(clean)
   } catch (error) {
-    console.error('Claude enrichment error:', error)
+    console.error(JSON.stringify({ event: 'claude_enrichment_error', traceId, error: error instanceof Error ? error.message : 'unknown' }))
     return linkedinContacts.map((c, i) => ({
       name: c.fullName || c.name || `Contact ${i + 1}`,
       title: c.title || c.headline || null,
@@ -723,7 +766,7 @@ function generateFallbackAnalysis(companyName: string, onboardingData: any) {
       'Budget IT en hausse de 15%',
     ],
     priorityScore: 7,
-    priorityJustification: `[MODE DÉMO] Compte généré automatiquement. Connectez vos API (Brave, Claude, Pappers) dans Supabase > Edge Functions > Secrets pour des résultats réels.`,
+    priorityJustification: `[MODE DÉMO] Compte généré automatiquement. Connectez vos API (Brave, Firecrawl, Claude, Apify) dans Supabase > Edge Functions > Secrets pour des résultats réels.`,
     contacts: [
       {
         name: 'Jean Martin', title: 'DSI', entity: 'Groupe', role: 'sponsor', priority: 1,

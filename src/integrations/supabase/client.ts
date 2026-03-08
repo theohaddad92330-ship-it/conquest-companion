@@ -21,5 +21,7 @@ export const supabase = createClient<Database>(SUPABASE_URL as string, SUPABASE_
     storage: localStorage,
     persistSession: true,
     autoRefreshToken: true,
+    detectSessionInUrl: true,
+    flowType: "pkce", // Google OAuth renvoie ?code=... ; on l'échange dans AuthCallback
   }
 });

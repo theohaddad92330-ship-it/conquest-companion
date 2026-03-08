@@ -30,10 +30,10 @@ export default function Welcome() {
         {/* Heading */}
         <div className="space-y-3">
           <h1 className="font-display text-3xl font-bold">
-            Bienvenue {firstName} ! 🎉
+            Merci d'avoir confirmé, {firstName} ! 🎉
           </h1>
           <p className="text-foreground/60 text-lg">
-            Votre compte Bellum AI a été créé avec succès.
+            Votre compte Bellum AI est actif. Remplissez ce questionnaire (environ 2 minutes) pour personnaliser votre expérience.
           </p>
         </div>
 

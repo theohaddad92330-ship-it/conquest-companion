@@ -216,7 +216,7 @@ export default function Dashboard() {
           </div>
           <Badge variant="secondary" className="gap-1.5 px-3 py-1.5 border border-primary/20 bg-primary/5 text-primary text-xs font-medium">
             <Sparkles className="h-3 w-3" />
-            Plan {(credits?.plan || mockCredits.plan).toLowerCase()}
+            Plan {(userCredits?.plan ?? "starter").toLowerCase()}
           </Badge>
         </motion.div>
 
@@ -376,7 +376,7 @@ export default function Dashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {displayAccounts.slice(0, 5).map((a: any) => (
+                    {accounts.slice(0, 5).map((a: any) => (
                       <TableRow key={a.id} className="cursor-pointer row-hover" onClick={() => navigate(`/accounts/${a.id}`)}>
                         <TableCell className="font-medium flex items-center gap-2">
                           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-secondary">

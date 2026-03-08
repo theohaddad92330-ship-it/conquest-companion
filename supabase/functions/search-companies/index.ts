@@ -1,32 +1,91 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+const MAX_QUERY_LENGTH = 100
+const SEARCH_RATE_LIMIT_PER_15MIN = 60
+
+function getCorsHeaders(): Record<string, string> {
+  const origin = Deno.env.get('ALLOWED_ORIGINS')?.trim()
+  return {
+    'Access-Control-Allow-Origin': origin || '*',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Content-Type': 'application/json',
+  }
 }
 
-const PAPPERS_API_KEY = Deno.env.get('PAPPERS_API_KEY') || ''
+function jsonResponse(data: unknown, status: number, headers?: Record<string, string>) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...getCorsHeaders(), ...headers },
+  })
+}
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
+  if (req.method === 'OPTIONS') return new Response(null, { headers: getCorsHeaders() })
 
   try {
-    const { query } = await req.json()
-    if (!query || query.length < 2) {
-      return new Response(JSON.stringify({ results: [] }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      return jsonResponse({ results: [], error: 'Non authentifié' }, 401)
     }
 
-    // Si pas de clé Pappers, retourner des suggestions de démonstration
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser(
+      authHeader.replace('Bearer ', '').trim()
+    )
+    if (authError || !user) {
+      return jsonResponse({ results: [], error: 'Non authentifié' }, 401)
+    }
+
+    const contentType = req.headers.get('content-type') || ''
+    if (!contentType.includes('application/json')) {
+      return jsonResponse({ results: [], error: 'Content-Type invalide' }, 400)
+    }
+
+    const rawBody = await req.text()
+    if (rawBody.length > 2048) {
+      return jsonResponse({ results: [], error: 'Payload trop volumineux' }, 400)
+    }
+
+    let body: { query?: unknown }
+    try {
+      body = JSON.parse(rawBody) as { query?: unknown }
+    } catch {
+      return jsonResponse({ results: [], error: 'JSON invalide' }, 400)
+    }
+
+    const rawQuery = body?.query
+    const query =
+      typeof rawQuery === 'string'
+        ? rawQuery.trim().slice(0, MAX_QUERY_LENGTH)
+        : ''
+
+    if (query.length < 2) {
+      return jsonResponse({ results: [] }, 200)
+    }
+
+    const { data: rateLimitOk } = await supabase.rpc('check_and_record_search_rate_limit', {
+      p_user_id: user.id,
+      p_max_per_15min: SEARCH_RATE_LIMIT_PER_15MIN,
+    })
+    if (rateLimitOk === false) {
+      return jsonResponse(
+        { results: [], error: 'Trop de recherches. Réessayez dans quelques minutes.' },
+        429,
+        { 'Retry-After': '60' }
+      )
+    }
+
+    const PAPPERS_API_KEY = Deno.env.get('PAPPERS_API_KEY') || ''
+
     if (!PAPPERS_API_KEY) {
       const demoResults = generateDemoSuggestions(query)
-      return new Response(JSON.stringify({ results: demoResults }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return jsonResponse({ results: demoResults }, 200)
     }
 
-    // Appel API Pappers
     const res = await fetch(
       `https://api.pappers.fr/v2/recherche?api_token=${PAPPERS_API_KEY}&q=${encodeURIComponent(query)}&par_page=5`,
       { signal: AbortSignal.timeout(5000) }
@@ -43,15 +102,13 @@ serve(async (req) => {
       legalForm: r.forme_juridique || null,
     }))
 
-    return new Response(JSON.stringify({ results }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown error'
-    return new Response(JSON.stringify({ results: [], error: message }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    return jsonResponse({ results }, 200)
+  } catch (err) {
+    console.error('search-companies error:', err instanceof Error ? err.message : 'unknown')
+    return jsonResponse(
+      { results: [], error: 'Erreur serveur' },
+      500
+    )
   }
 })
 

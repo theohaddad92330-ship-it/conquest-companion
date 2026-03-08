@@ -72,16 +72,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signInWithGoogle = async () => {
-    const redirectTo = `${window.location.origin}/dashboard`;
+    const redirectTo = `${window.location.origin}/auth/callback`;
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: { redirectTo },
     });
-    if (error) return { error };
+    if (error) {
+      console.warn("[signInWithGoogle] Erreur:", error.message, error);
+      return { error };
+    }
     if (data?.url) {
+      console.log("[signInWithGoogle] Redirection vers:", data.url);
       window.location.href = data.url;
       return { error: null };
     }
+    console.warn("[signInWithGoogle] Pas d'URL de redirection reçue", { data });
     return { error: new Error("Pas d'URL de redirection OAuth") };
   };
 

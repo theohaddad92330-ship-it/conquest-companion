@@ -11,6 +11,18 @@ export default defineConfig(({ mode }) => ({
     hmr: {
       overlay: false,
     },
+    headers: {
+      "X-Content-Type-Options": "nosniff",
+      "X-Frame-Options": "DENY",
+      "Referrer-Policy": "strict-origin-when-cross-origin",
+    },
+  },
+  preview: {
+    headers: {
+      "X-Content-Type-Options": "nosniff",
+      "X-Frame-Options": "DENY",
+      "Referrer-Policy": "strict-origin-when-cross-origin",
+    },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {

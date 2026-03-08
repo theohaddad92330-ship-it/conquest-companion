@@ -25,7 +25,7 @@ const steps = [
 export default function Onboarding() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { updateProfile } = useProfile();
+  const { updateProfile, refetch: refetchProfile } = useProfile();
   const [current, setCurrent] = useState(0);
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [showError, setShowError] = useState(false);
@@ -54,24 +54,27 @@ export default function Onboarding() {
 
   const saveOnboarding = async (): Promise<boolean> => {
     setSaving(true);
-    const payload = {
-      onboarding_completed: true,
-      onboarding_data: answers as any,
-      company_name: answers.esnName || null,
-    };
-    const { error, data } = await updateProfile(payload);
-    setSaving(false);
-    if (error) {
-      toast({ title: "Erreur", description: "Impossible de sauvegarder votre profil.", variant: "destructive" });
-      return false;
-    }
-    const saved = !!data?.onboarding_completed;
-    if (saved) {
+    try {
+      const payload = {
+        onboarding_completed: true,
+        onboarding_data: answers as any,
+        company_name: answers.esnName || null,
+      };
+      const { error, data } = await updateProfile(payload);
+      if (error) {
+        console.error("[Onboarding] Erreur sauvegarde profil:", error);
+        toast({ title: "Erreur", description: "Impossible de sauvegarder votre profil. Réessaie.", variant: "destructive" });
+        return false;
+      }
       console.log("[Onboarding] Sauvegarde OK — onboarding_completed: true", data);
-    } else {
-      console.warn("[Onboarding] Sauvegarde incertaine — pas de donnée retournée", { error, data });
+      return true;
+    } catch (err) {
+      console.error("[Onboarding] saveOnboarding error:", err);
+      toast({ title: "Erreur", description: "Erreur lors de la sauvegarde. Réessaie.", variant: "destructive" });
+      return false;
+    } finally {
+      setSaving(false);
     }
-    return saved;
   };
 
   const next = async () => {
@@ -83,8 +86,16 @@ export default function Onboarding() {
     setShowError(false);
 
     if (isLast) {
-      const saved = await saveOnboarding();
-      if (saved) navigate("/dashboard", { replace: true });
+      try {
+        const saved = await saveOnboarding();
+        if (saved) {
+          await refetchProfile();
+          navigate("/dashboard", { replace: true });
+        }
+      } catch (err) {
+        console.error("[Onboarding] Submit final error:", err);
+        toast({ title: "Erreur", description: "Erreur lors de la sauvegarde. Réessaie.", variant: "destructive" });
+      }
     } else {
       setCurrent((c) => c + 1);
     }

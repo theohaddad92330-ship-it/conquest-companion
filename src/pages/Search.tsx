@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AccountCard } from "@/components/AccountCard";
 import { SearchCorrectionBanner } from "@/components/SearchCorrectionBanner";
+import { useToast } from "@/hooks/use-toast";
 import { useAnalysisPolling } from "@/hooks/useAnalysisPolling";
 import { useCompanySearch } from "@/hooks/useCompanySearch";
 
@@ -33,8 +34,9 @@ export default function SearchPage() {
   const [query, setQuery] = useState(searchParams.get("q") || "");
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const inputWrapperRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
   const { state: analysis, startAnalysis, resetState } = useAnalysisPolling();
-  const { suggestions, isSearching: isSuggesting, search: searchSuggestions, clear: clearSuggestions } = useCompanySearch();
+  const { suggestions, isSearching: isSuggesting, searchError, search: searchSuggestions, clear: clearSuggestions } = useCompanySearch();
 
   const steps = useMemo<Step[]>(() => {
     const base = initialSteps.map((s) => ({ ...s, status: "pending" as const, duration: undefined }));
@@ -80,6 +82,12 @@ export default function SearchPage() {
     const q = searchParams.get("q");
     if (q) { setQuery(q); }
   }, [searchParams]);
+
+  useEffect(() => {
+    if (searchError) {
+      toast({ title: "Recherche", description: searchError, variant: "destructive" });
+    }
+  }, [searchError, toast]);
 
   useEffect(() => {
     const q = searchParams.get("q");

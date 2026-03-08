@@ -33,11 +33,15 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   // Pages autorisées sans avoir terminé le questionnaire
   const isOnboardingFlow = ["/welcome", "/onboarding"].includes(location.pathname);
 
-  // Profil absent (trigger pas encore exécuté ou erreur) → considérer onboarding non fait
-  const onboardingDone = profile?.onboarding_completed === true;
-  if (!isOnboardingFlow && !onboardingDone) {
+  // Connecté mais onboarding non terminé → onboarding
+  if (!isOnboardingFlow && profile && profile.onboarding_completed === false) {
+    return <Navigate to="/onboarding" replace />;
+  }
+  // Profil absent (trigger pas encore exécuté) → onboarding pour créer/compléter le profil
+  if (!isOnboardingFlow && profile === null) {
     return <Navigate to="/onboarding" replace />;
   }
 
+  // Connecté, profil chargé, onboarding fait → accès
   return <>{children}</>;
 }

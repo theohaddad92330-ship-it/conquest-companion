@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { AnalysisState, AccountAnalysis, Contact, AttackAngle, ActionPlan } from '@/types/account';
 import { useQueryClient } from '@tanstack/react-query';
+import { analyzeAccountSchema } from '@/lib/validation';
 
 export function useAnalysisPolling() {
   const queryClient = useQueryClient();
@@ -51,7 +52,19 @@ export function useAnalysisPolling() {
 
   const startAnalysis = useCallback(async (companyName: string, userContext?: string) => {
     stopPolling();
-    const trimmedName = companyName.trim();
+    const parsed = analyzeAccountSchema.safeParse({
+      companyName: companyName?.trim(),
+      userContext: userContext ?? undefined,
+    });
+    if (!parsed.success) {
+      setState(prev => ({
+        ...prev,
+        status: 'idle',
+        error: parsed.error.errors[0]?.message ?? 'Données invalides',
+      }));
+      return;
+    }
+    const trimmedName = parsed.data.companyName;
     setState({
       status: 'loading',
       accountId: null,
@@ -70,11 +83,27 @@ export function useAnalysisPolling() {
 
     try {
       const { data, error } = await supabase.functions.invoke('analyze-account', {
-        body: { companyName: trimmedName, userContext },
+        body: {
+          companyName: trimmedName,
+          userContext: parsed.data.userContext ?? undefined,
+        },
       });
 
-      if (error) throw error;
-      const accountId = data.accountId;
+      if (error) {
+        const msg = (data && typeof data === 'object' && 'error' in data
+          ? (data as { error?: string }).error
+          : null) || (error instanceof Error ? error.message : 'Erreur lors du lancement');
+        throw new Error(msg);
+      }
+      const accountId = data?.accountId;
+      if (!accountId) {
+        setState(prev => ({
+          ...prev,
+          status: 'error',
+          error: 'Réponse serveur invalide',
+        }));
+        return;
+      }
 
       setState(prev => ({
         ...prev,
@@ -182,11 +211,12 @@ export function useAnalysisPolling() {
       // Timeout après 5 minutes
       setTimeout(() => stopPolling(), 300000);
 
-    } catch (error: any) {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erreur lors du lancement';
       setState(prev => ({
         ...prev,
         status: 'error',
-        error: error.message || 'Erreur lors du lancement',
+        error: msg,
       }));
     }
   }, [stopPolling, queryClient]);
