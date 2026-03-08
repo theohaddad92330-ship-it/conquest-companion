@@ -129,12 +129,12 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
   console.log(JSON.stringify({ event: 'analysis_start', traceId, accountId, companyName, userId }))
 
   try {
-    // ÉTAPE 1 — Brave Search
-    const braveResults = await searchBrave(companyName, traceId)
+    // ÉTAPE 1 — Brave Search (6 requêtes, 30 résultats)
+    const braveResults = await searchBrave(companyName, onboardingData, traceId)
     console.log(JSON.stringify({ event: 'brave_done', traceId, resultsCount: braveResults.results?.length || 0 }))
 
-    // ÉTAPE 2 — Scraping pages (3–5 premières URLs Brave)
-    const scrapedContent = await scrapePages(braveResults.urls?.slice(0, 5) || [], traceId)
+    // ÉTAPE 2 — Scraping pages (jusqu'à 12 pages priorisées)
+    const scrapedContent = await scrapePages(braveResults.urls || [], traceId)
     console.log(JSON.stringify({ event: 'firecrawl_done', traceId, contentLength: scrapedContent.length }))
 
     // Contexte RAG (base de connaissances ESN)
@@ -201,8 +201,8 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
         }
       }
 
-      // 5b. Scraper les contacts LinkedIn (50–100, filtrés par personas)
-      const linkedinContacts = await scrapeLinkedInPeople(companyName, onboardingData, 100, traceId)
+      // 5b. Scraper les contacts LinkedIn (200+, 8 requêtes, 20 pages)
+      const linkedinContacts = await scrapeLinkedInPeople(companyName, onboardingData, 200, traceId)
 
       if (linkedinContacts.length > 0) {
         // ÉTAPE 6 — Enrichissement contacts avec Claude
@@ -274,38 +274,50 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
 // FONCTIONS API EXTERNES
 // ============================================
 
-async function searchBrave(query: string, traceId: string) {
+async function searchBrave(companyName: string, onboardingData: any, traceId: string) {
   if (!BRAVE_API_KEY) return { results: [], urls: [] }
+  const year = new Date().getFullYear()
+  const queries = [
+    `${companyName} stratégie transformation digitale ${year}`,
+    `${companyName} projet cloud IA data cybersécurité programme investissement IT`,
+    `${companyName} recrutement DSI CTO nomination ${year} actualités`,
+    `${companyName} filiales organisation organigramme DSI direction SI`,
+    `${companyName} prestataire ESN intégrateur Capgemini Sopra Atos Accenture Devoteam`,
+    `${companyName} appel offres marché IT prestation informatique ${year}`,
+  ]
+  let allResults: any[] = []
   try {
-    const year = new Date().getFullYear()
-    const queries = [
-      `${query} stratégie transformation digitale ${year}`,
-      `${query} projet cloud IA data recrutement IT`,
-      `${query} actualités DSI CTO programme`,
-    ]
-    const allResults: any[] = []
-    for (const q of queries.slice(0, 3)) {
-      const res = await fetch(
-        `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=10`,
-        {
-          headers: { 'X-Subscription-Token': BRAVE_API_KEY },
-          signal: AbortSignal.timeout(10000),
-        }
+    const batchSize = 3
+    for (let i = 0; i < queries.length; i += batchSize) {
+      const batch = queries.slice(i, i + batchSize)
+      const batchResults = await Promise.allSettled(
+        batch.map(async (q) => {
+          const res = await fetch(
+            `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=10`,
+            {
+              headers: { 'X-Subscription-Token': BRAVE_API_KEY },
+              signal: AbortSignal.timeout(10000),
+            }
+          )
+          const data = await res.json()
+          return data.web?.results || []
+        })
       )
-      const data = await res.json()
-      const results = data.web?.results?.slice(0, 10) || []
-      allResults.push(...results)
+      for (const result of batchResults) {
+        if (result.status === 'fulfilled') allResults.push(...result.value)
+      }
+      if (i + batchSize < queries.length) await new Promise(r => setTimeout(r, 500))
     }
     const seen = new Set<string>()
     const unique = allResults.filter((r: any) => {
-      const url = r.url || ''
-      if (seen.has(url)) return false
-      seen.add(url)
+      if (!r.url || seen.has(r.url)) return false
+      seen.add(r.url)
       return true
     })
+    const top = unique.slice(0, 30)
     return {
-      results: unique.slice(0, 10).map((r: any) => ({ title: r.title, description: r.description, url: r.url })),
-      urls: unique.slice(0, 10).map((r: any) => r.url),
+      results: top.map((r: any) => ({ title: r.title, description: r.description, url: r.url })),
+      urls: top.map((r: any) => r.url),
     }
   } catch (err) {
     console.error(JSON.stringify({ event: 'brave_error', traceId, error: err instanceof Error ? err.message : 'unknown' }))
@@ -313,24 +325,63 @@ async function searchBrave(query: string, traceId: string) {
   }
 }
 
+function prioritizeUrls(urls: string[]): string[] {
+  const corporate: string[] = []
+  const news: string[] = []
+  const jobs: string[] = []
+  const other: string[] = []
+  for (const url of urls) {
+    const lower = url.toLowerCase()
+    if (lower.includes('linkedin.com') || lower.includes('facebook.com') || lower.includes('twitter.com')) continue
+    if (lower.includes('careers') || lower.includes('emploi') || lower.includes('recrutement') || lower.includes('jobs') || lower.includes('welcometothejungle')) jobs.push(url)
+    else if (lower.includes('lesechos') || lower.includes('journaldunet') || lower.includes('usine') || lower.includes('presse') || lower.includes('communique') || lower.includes('bfm') || lower.includes('figaro')) news.push(url)
+    else if (!lower.includes('wikipedia')) corporate.push(url)
+    else other.push(url)
+  }
+  return [...corporate.slice(0, 5), ...news.slice(0, 4), ...jobs.slice(0, 3), ...other.slice(0, 3)]
+}
+
 async function scrapePages(urls: string[], traceId: string) {
   if (!FIRECRAWL_API_KEY || urls.length === 0) return ''
   const contents: string[] = []
-  for (const url of urls.slice(0, 5)) {
-    try {
-      const res = await fetch('https://api.firecrawl.dev/v1/scrape', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${FIRECRAWL_API_KEY}` },
-        body: JSON.stringify({ url, formats: ['markdown'] }),
-        signal: AbortSignal.timeout(10000),
-      })
-      const data = await res.json()
-      if (data.data?.markdown) contents.push(data.data.markdown.slice(0, 3000))
-    } catch (err) {
-      console.error(JSON.stringify({ event: 'firecrawl_error', traceId, url: url.slice(0, 50), error: err instanceof Error ? err.message : 'unknown' }))
+  try {
+    const prioritized = prioritizeUrls(urls)
+    const maxPages = Math.min(prioritized.length, 12)
+    const batchSize = 4
+    for (let i = 0; i < maxPages; i += batchSize) {
+      const batch = prioritized.slice(i, i + batchSize)
+      const batchResults = await Promise.allSettled(
+        batch.map(async (url) => {
+          const res = await fetch('https://api.firecrawl.dev/v1/scrape', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${FIRECRAWL_API_KEY}`,
+            },
+            body: JSON.stringify({
+              url,
+              formats: ['markdown'],
+              onlyMainContent: true,
+            }),
+            signal: AbortSignal.timeout(15000),
+          })
+          const data = await res.json()
+          if (data.data?.markdown) {
+            return `--- SOURCE: ${url} ---\n${data.data.markdown.slice(0, 4000)}`
+          }
+          return null
+        })
+      )
+      for (const result of batchResults) {
+        if (result.status === 'fulfilled' && result.value) contents.push(result.value)
+      }
+      if (i + batchSize < maxPages) await new Promise(r => setTimeout(r, 300))
     }
+    return contents.join('\n\n')
+  } catch (err) {
+    console.error(JSON.stringify({ event: 'firecrawl_error', traceId, error: err instanceof Error ? err.message : 'unknown' }))
+    return ''
   }
-  return contents.join('\n\n---\n\n')
 }
 
 async function searchRAG(supabase: any, _query: string, category?: string): Promise<string> {
@@ -540,7 +591,7 @@ DONNÉES WEB (Brave Search) :
 ${JSON.stringify(braveResults.results?.slice(0, 5), null, 2)}
 
 CONTENU SCRAPÉ (Firecrawl) :
-${scrapedContent.slice(0, 8000)}
+${scrapedContent.slice(0, 15000)}
 
 Tu peux déduire les infos légales / secteur / effectifs depuis ces sources. Produis un JSON avec EXACTEMENT cette structure :
 {
@@ -593,7 +644,11 @@ Tu peux déduire les infos légales / secteur / effectifs depuis ces sources. Pr
   }
 }
 
-Génère 5-8 contacts, 3 angles, et un plan de 4 semaines.`
+Génère :
+- 8-12 contacts réalistes avec des postes variés (DSI, chef de projet, achats, data, cloud, sécurité)
+- 3-5 angles d'attaque classés par score de priorité
+- Un plan d'action de 4 à 8 semaines (adapté au cycle de vente de l'ESN)
+- Pour chaque contact : un email, un message LinkedIn ET un message de relance`
 
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -605,7 +660,7 @@ Génère 5-8 contacts, 3 angles, et un plan de 4 semaines.`
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 8000,
+        max_tokens: 12000,
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
       }),
@@ -651,8 +706,7 @@ Génère 5-8 contacts, 3 angles, et un plan de 4 semaines.`
 // ============================================
 
 /**
- * Étape 4a — Scraper la page entreprise LinkedIn
- * Récupère : description, nombre d'employés, filiales, spécialités
+ * Étape 5a — Scraper la page entreprise LinkedIn (description, effectifs, filiales, spécialités)
  */
 async function scrapeLinkedInCompany(companyName: string, traceId: string): Promise<any> {
   if (!APIFY_API_TOKEN) return null
@@ -661,7 +715,11 @@ async function scrapeLinkedInCompany(companyName: string, traceId: string): Prom
     const runRes = await fetch(`https://api.apify.com/v2/acts/${actorId}/runs?token=${APIFY_API_TOKEN}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ queries: [companyName], maxResults: 1 }),
+      body: JSON.stringify({
+        queries: [companyName],
+        maxResults: 1,
+        includeEmployees: false,
+      }),
       signal: AbortSignal.timeout(10000),
     })
     const runData = await runRes.json()
@@ -670,12 +728,12 @@ async function scrapeLinkedInCompany(companyName: string, traceId: string): Prom
 
     let status = 'RUNNING'
     let attempts = 0
-    const deadline = Date.now() + 180000
-    while (status === 'RUNNING' && attempts < 60 && Date.now() < deadline) {
+    while (status === 'RUNNING' && attempts < 40) {
       await new Promise(r => setTimeout(r, 3000))
-      const statusRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${APIFY_API_TOKEN}`, {
-        signal: AbortSignal.timeout(10000),
-      })
+      const statusRes = await fetch(
+        `https://api.apify.com/v2/actor-runs/${runId}?token=${APIFY_API_TOKEN}`,
+        { signal: AbortSignal.timeout(5000) }
+      )
       const statusData = await statusRes.json()
       status = statusData?.data?.status || 'FAILED'
       attempts++
@@ -683,9 +741,10 @@ async function scrapeLinkedInCompany(companyName: string, traceId: string): Prom
 
     if (status !== 'SUCCEEDED') return null
 
-    const datasetRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${APIFY_API_TOKEN}`, {
-      signal: AbortSignal.timeout(30000),
-    })
+    const datasetRes = await fetch(
+      `https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${APIFY_API_TOKEN}`,
+      { signal: AbortSignal.timeout(10000) }
+    )
     const items = await datasetRes.json()
     return items?.[0] || null
   } catch (err) {
@@ -695,40 +754,44 @@ async function scrapeLinkedInCompany(companyName: string, traceId: string): Prom
 }
 
 /**
- * Étape 5b — Scraper les contacts LinkedIn (filtrés par personas, exclus excludedPersonas)
+ * Étape 5b — Scraper les contacts LinkedIn en masse (200+, 8 requêtes, 20 pages/requête)
  */
 async function scrapeLinkedInPeople(
   companyName: string,
   onboardingData: any,
-  maxContacts: number = 100,
+  maxContacts: number = 200,
   traceId?: string
 ): Promise<any[]> {
   if (!APIFY_API_TOKEN) return []
   try {
     const personas = onboardingData.personas || ['DSI / CTO', 'Directeur de projet', 'Achats IT']
     const excludedPersonas = onboardingData.excludedPersonas ?? ['Stagiaires', 'Marketing']
-    
-    const searchQueries = personas.map((persona: string) => {
-      const cleanPersona = persona
-        .replace('DSI / CTO', 'DSI OR CTO OR "Directeur des Systèmes"')
-        .replace('Directeur de projet', '"Directeur de projet" OR "Chef de projet"')
-        .replace('Achats IT', '"Achats IT" OR "Directeur Achats"')
-        .replace('CDO / Data', 'CDO OR "Chief Data" OR "Head of Data"')
-        .replace('RSSI / Cyber', 'RSSI OR "Responsable Sécurité" OR CISO')
-        .replace('DRH', 'DRH OR "Directeur RH"')
-        .replace('Opérationnels IT', '"Responsable IT" OR "Manager IT" OR "Lead technique"')
-        .replace('DAF', 'DAF OR "Directeur Financier" OR CFO')
-      return `${cleanPersona} ${companyName}`
-    })
+
+    const searchQueries: string[] = [
+      `DSI OR CTO OR "Chief Technology" OR "Chief Information" OR "VP Engineering" OR "Directeur Systèmes" "${companyName}"`,
+      `"Head of" OR "Director" OR "Responsable" IT OR Data OR Cloud OR Digital "${companyName}"`,
+      `"Chef de projet" OR "Project Manager" OR "Tech Lead" OR "Engineering Manager" "${companyName}"`,
+      `"Achats IT" OR "Procurement" OR "Sourcing" OR "Directeur Achats" "${companyName}"`,
+      `"RSSI" OR "CISO" OR "Sécurité" OR "Conformité" OR "Risk" "${companyName}"`,
+      `"CDO" OR "Chief Data" OR "Head of Data" OR "Data Engineer" OR "ML Engineer" "${companyName}"`,
+      `"Transformation" OR "Innovation" OR "Digital" OR "CDO" "${companyName}"`,
+    ]
+    for (const persona of personas) {
+      const cleanPersona = persona.replace(/\//g, ' OR ').replace(/DSI/g, '"DSI"').replace(/CTO/g, '"CTO"').replace(/CDO/g, '"CDO"')
+      if (!searchQueries.some(q => q.includes(cleanPersona))) {
+        searchQueries.push(`${cleanPersona} "${companyName}"`)
+      }
+    }
+    const finalQueries = searchQueries.slice(0, 8)
 
     const actorId = 'curious_coder~linkedin-people-search'
-
     const runRes = await fetch(`https://api.apify.com/v2/acts/${actorId}/runs?token=${APIFY_API_TOKEN}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        queries: searchQueries,
-        maxResults: Math.ceil(Math.min(maxContacts, 100) / Math.max(searchQueries.length, 1)),
+        queries: finalQueries,
+        maxResults: Math.ceil(maxContacts / finalQueries.length),
+        maxPages: 20,
       }),
       signal: AbortSignal.timeout(10000),
     })
@@ -738,12 +801,12 @@ async function scrapeLinkedInPeople(
 
     let status = 'RUNNING'
     let attempts = 0
-    const deadline = Date.now() + 180000
-    while (status === 'RUNNING' && attempts < 60 && Date.now() < deadline) {
+    while (status === 'RUNNING' && attempts < 60) {
       await new Promise(r => setTimeout(r, 3000))
-      const statusRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${APIFY_API_TOKEN}`, {
-        signal: AbortSignal.timeout(10000),
-      })
+      const statusRes = await fetch(
+        `https://api.apify.com/v2/actor-runs/${runId}?token=${APIFY_API_TOKEN}`,
+        { signal: AbortSignal.timeout(5000) }
+      )
       const statusData = await statusRes.json()
       status = statusData?.data?.status || 'FAILED'
       attempts++
@@ -751,35 +814,53 @@ async function scrapeLinkedInPeople(
 
     if (status !== 'SUCCEEDED') return []
 
-    const datasetRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${APIFY_API_TOKEN}`, {
-      signal: AbortSignal.timeout(30000),
-    })
+    const datasetRes = await fetch(
+      `https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${APIFY_API_TOKEN}&limit=500`,
+      { signal: AbortSignal.timeout(15000) }
+    )
     const items: any[] = await datasetRes.json()
 
+    const excludeKeywords = [
+      'stagiaire', 'intern', 'alternant', 'apprenti',
+      'student', 'étudiant', 'freelance', 'indépendant',
+      'consultant chez capgemini', 'consultant chez sopra',
+      'consultant chez atos', 'consultant chez accenture',
+    ]
     const filtered = items.filter((item: any) => {
       const title = (item.title || item.headline || '').toLowerCase()
-      const isExcluded = excludedPersonas.some((excluded: string) =>
-        title.includes(excluded.toLowerCase())
-      )
+      const name = (item.fullName || item.name || '').toLowerCase()
+      const isExcluded = excludedPersonas.some((excluded: string) => title.includes(excluded.toLowerCase()))
       if (isExcluded) return false
-      if (title.includes('stagiaire') || title.includes('intern') || title.includes('alternant') || title.includes('apprenti')) return false
+      if (excludeKeywords.some(kw => title.includes(kw))) return false
+      if (!name || name.length < 3) return false
       return true
     })
 
     const seen = new Set<string>()
     const unique = filtered.filter((item: any) => {
-      const name = (item.fullName || item.name || '').toLowerCase()
-      if (!name) return false
+      const name = (item.fullName || item.name || '').toLowerCase().trim()
       if (seen.has(name)) return false
       seen.add(name)
       return true
     })
 
-    return unique.slice(0, maxContacts)
+    const sorted = unique.sort((a: any, b: any) => contactRelevanceScore(b) - contactRelevanceScore(a))
+    return sorted.slice(0, maxContacts)
   } catch (err) {
     console.error(JSON.stringify({ event: 'apify_people_error', traceId: traceId || 'n/a', error: err instanceof Error ? err.message : 'unknown' }))
     return []
   }
+}
+
+function contactRelevanceScore(contact: any): number {
+  const title = (contact.title || contact.headline || '').toLowerCase()
+  let score = 0
+  if (/\b(dsi|cto|cio|cdo|ciso|vp|chief|directeur général)\b/.test(title)) score += 10
+  if (/\b(directeur|director|head of|responsable|manager)\b/.test(title)) score += 7
+  if (/\b(chef de projet|project manager|tech lead|lead|architecte)\b/.test(title)) score += 5
+  if (/\b(achat|procurement|sourcing|purchasing)\b/.test(title)) score += 6
+  if (/\b(it|si|data|cloud|cyber|sécurité|digital|transformation)\b/.test(title)) score += 3
+  return score
 }
 
 /**
@@ -896,7 +977,7 @@ FORMAT DE SORTIE — JSON STRICT
 
 Réponds UNIQUEMENT en JSON valide. Un tableau d'objets. Pas de texte avant/après.`
 
-  const contactsList = linkedinContacts.slice(0, 30).map(c => ({
+  const contactsList = linkedinContacts.slice(0, 50).map(c => ({
     name: c.fullName || c.name,
     title: c.title || c.headline,
     company: c.company || companyName,
@@ -937,7 +1018,7 @@ Retourne un tableau JSON :
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 8000,
+        max_tokens: 12000,
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
       }),
