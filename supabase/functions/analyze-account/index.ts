@@ -209,7 +209,7 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
       })
     }
 
-    // ÉTAPE 5 — Scraping LinkedIn (Apify) ou génération contacts (Claude)
+    // ===== ÉTAPE 5 — CONTACTS =====
     let finalContacts: any[] = []
     let contactSourceForDb: 'linkedin_apify' | 'ai_generated' = 'ai_generated'
 
@@ -224,40 +224,44 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
           await supabase.from('accounts').update(updates).eq('id', accountId)
         }
       }
+
       const linkedinContacts = await scrapeLinkedInPeople(companyName, onboardingData, 200, traceId)
-      console.log(JSON.stringify({
-        event: 'apify_detail',
-        traceId,
-        apifyTokenPresent: !!APIFY_API_TOKEN,
-        apifyTokenLength: APIFY_API_TOKEN.length,
-        linkedinContactsCount: linkedinContacts?.length || 0,
-        companyDataFound: !!companyData,
-      }))
-      if (Array.isArray(linkedinContacts) && linkedinContacts.length > 0) {
-        finalContacts = await enrichLinkedInContactsWithClaude(
-          linkedinContacts,
-          companyName,
-          analysis,
-          onboardingData,
-          traceId
-        )
+      console.log(JSON.stringify({ event: 'apify_detail', traceId, apifyTokenPresent: true, apifyTokenLength: APIFY_API_TOKEN.length, linkedinContactsCount: linkedinContacts.length, companyDataFound: !!companyData }))
+
+      if (linkedinContacts.length > 0) {
+        finalContacts = await enrichLinkedInContactsWithClaude(linkedinContacts, companyName, analysis, onboardingData, traceId)
         contactSourceForDb = 'linkedin_apify'
         console.log(JSON.stringify({ event: 'contacts_source', traceId, source: 'apify_enriched', count: finalContacts.length }))
       } else {
-        console.log(JSON.stringify({ event: 'apify_failed_fallback_claude', traceId }))
-        finalContacts = await generateContactsWithClaude(companyName, analysis, onboardingData, traceId)
-        console.log(JSON.stringify({ event: 'contacts_source', traceId, source: 'claude_fallback', count: finalContacts.length }))
+        console.log(JSON.stringify({ event: 'apify_failed_using_claude_fallback', traceId }))
+        try {
+          finalContacts = await generateContactsWithClaude(companyName, analysis, onboardingData, traceId)
+        } catch (genErr) {
+          console.error(JSON.stringify({ event: 'generate_contacts_crash', traceId, error: genErr instanceof Error ? genErr.message : String(genErr) }))
+          finalContacts = []
+        }
+        console.log(JSON.stringify({ event: 'contacts_source', traceId, source: 'claude_fallback_after_apify', count: finalContacts.length }))
       }
     } else {
-      finalContacts = await generateContactsWithClaude(companyName, analysis, onboardingData, traceId)
+      console.log(JSON.stringify({ event: 'no_apify_using_claude', traceId }))
+      try {
+        finalContacts = await generateContactsWithClaude(companyName, analysis, onboardingData, traceId)
+      } catch (genErr) {
+        console.error(JSON.stringify({ event: 'generate_contacts_crash', traceId, error: genErr instanceof Error ? genErr.message : String(genErr) }))
+        finalContacts = []
+      }
       console.log(JSON.stringify({ event: 'contacts_source', traceId, source: 'claude_no_apify', count: finalContacts.length }))
     }
 
-    // Si après tout on a toujours 0 contacts → générer avec Claude
+    // FILET DE SÉCURITÉ : si après tout on a toujours 0 contacts
     if (finalContacts.length === 0) {
-      console.log(JSON.stringify({ event: 'no_contacts_fallback', traceId }))
-      finalContacts = await generateContactsWithClaude(companyName, analysis, onboardingData, traceId)
-      console.log(JSON.stringify({ event: 'contacts_generated', traceId, count: finalContacts.length }))
+      console.log(JSON.stringify({ event: 'last_resort_fallback', traceId }))
+      try {
+        finalContacts = await generateContactsWithClaude(companyName, analysis, onboardingData, traceId)
+      } catch (genErr) {
+        console.error(JSON.stringify({ event: 'generate_contacts_crash', traceId, error: genErr instanceof Error ? genErr.message : String(genErr) }))
+      }
+      console.log(JSON.stringify({ event: 'contacts_source', traceId, source: 'last_resort', count: finalContacts.length }))
     }
 
     // ÉTAPE 7 — Sauvegarde finale (contacts + status completed)
@@ -779,59 +783,53 @@ async function generateContactsWithClaude(
   onboardingData: any,
   traceId: string
 ): Promise<any[]> {
-  if (!ANTHROPIC_API_KEY) return accountAnalysis.contacts || []
+  if (!ANTHROPIC_API_KEY) {
+    console.log(JSON.stringify({ event: 'generate_contacts_no_key', traceId }))
+    return []
+  }
 
-  const systemPrompt = `Tu es BELLUM. Tu génères des contacts B2B réalistes pour la prospection ESN.
+  console.log(JSON.stringify({ event: 'generate_contacts_start', traceId, companyName }))
+
+  const systemPrompt = `Tu es BELLUM, expert en prospection B2B pour les ESN.
+Génère des contacts réalistes pour la prospection d'un compte.
 
 PROFIL ESN :
 - Offres : ${JSON.stringify(onboardingData.offers || [])}
 - Personas cibles : ${JSON.stringify(onboardingData.personas || [])}
 - Taille : ${onboardingData.size || 'Non renseignée'}
 - TJM : ${onboardingData.avgTJM || 'Non renseigné'}
-- Style : ${onboardingData.style || 'direct'}
 
-COMPTE ANALYSÉ :
+COMPTE :
 - Nom : ${companyName}
-- Secteur : ${accountAnalysis.sector}
-- Effectifs : ${accountAnalysis.employees}
+- Secteur : ${accountAnalysis.sector || 'Non détecté'}
+- Effectifs : ${accountAnalysis.employees || 'Non détecté'}
 - Enjeux IT : ${JSON.stringify(accountAnalysis.itChallenges || [])}
 - Signaux : ${JSON.stringify(accountAnalysis.recentSignals || [])}
-- Angles : ${JSON.stringify(accountAnalysis.angles?.map((a: any) => a.title) || [])}
 - Filiales : ${JSON.stringify(accountAnalysis.subsidiaries || [])}
-- Entités : ${JSON.stringify(accountAnalysis.entitiesExhaustive || [])}
 
 RÈGLES :
-- Génère 20 à 30 contacts variés couvrant toutes les entités et filiales identifiées
-- Pour chaque entité/filiale, génère au moins 2-3 contacts
-- Les contacts doivent couvrir tous les niveaux : C-level, middle management, opérationnels, achats
-- Chaque contact a un message email, un message LinkedIn et une relance personnalisés
-- Les messages doivent mentionner un enjeu SPÉCIFIQUE du compte
-- Les postes doivent être réalistes pour une entreprise française de ce secteur et cette taille
-- Inclure la localisation probable (Paris, La Défense, siège, etc.)
-- NE PAS inventer de vrais noms de personnes réelles — utiliser des noms fictifs réalistes
-
-Réponds UNIQUEMENT en JSON valide. Un tableau d'objets.`
+- Génère EXACTEMENT 15 contacts variés
+- Couvre les niveaux : C-level, middle management, opérationnels, achats
+- Chaque contact a un email, un message LinkedIn et une relance
+- Les messages mentionnent un enjeu SPÉCIFIQUE du compte
+- Utilise des noms fictifs réalistes pour une entreprise française
+- Réponds UNIQUEMENT en JSON valide, un tableau d'objets`
 
   const userPrompt = `Génère 15 contacts pour ${companyName}.
-
-Structure de chaque contact :
+Chaque contact :
 {
   "name": "Prénom Nom",
-  "title": "Poste exact",
-  "entity": "Filiale ou BU",
-  "location": "Ville",
+  "title": "Poste",
+  "entity": "Filiale/BU",
   "role": "sponsor|champion|operational|purchasing|influencer",
-  "priority": 1-5,
-  "accessibility": 1-5,
-  "summary": "Résumé du profil (2-3 phrases)",
-  "whyContact": "Pourquoi le contacter spécifiquement",
-  "linkedinSignals": "Dernières activités LinkedIn probables",
+  "priority": 1,
+  "summary": "Résumé 2 phrases",
+  "whyContact": "Pourquoi le contacter",
   "email": "prenom.nom@domaine.com",
-  "phone": "06 XX XX XX XX",
   "linkedin": "linkedin.com/in/prenomnom",
-  "emailMessage": {"subject": "Objet email max 60 car", "body": "Corps email max 150 mots"},
-  "linkedinMessage": "Message LinkedIn max 300 caractères",
-  "followupMessage": {"subject": "RE: Objet", "body": "Relance max 80 mots"}
+  "emailMessage": {"subject": "Objet", "body": "Corps"},
+  "linkedinMessage": "Message LinkedIn",
+  "followupMessage": {"subject": "RE: Objet", "body": "Relance"}
 }`
 
   try {
@@ -848,24 +846,25 @@ Structure de chaque contact :
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
       }),
-      signal: AbortSignal.timeout(120000),
+      signal: AbortSignal.timeout(90000),
     })
+
+    if (!res.ok) {
+      const errText = await res.text()
+      console.error(JSON.stringify({ event: 'generate_contacts_http_error', traceId, status: res.status, body: errText.slice(0, 300) }))
+      return []
+    }
 
     const data = await res.json()
     const text = data.content?.[0]?.text || '[]'
     const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
 
-    try {
-      const contacts = JSON.parse(clean)
-      console.log(JSON.stringify({ event: 'contacts_generated', traceId, count: Array.isArray(contacts) ? contacts.length : 0 }))
-      return Array.isArray(contacts) ? contacts : []
-    } catch {
-      console.error(JSON.stringify({ event: 'contacts_parse_error', traceId, preview: text.slice(0, 300) }))
-      return accountAnalysis.contacts || []
-    }
+    const contacts = JSON.parse(clean)
+    console.log(JSON.stringify({ event: 'generate_contacts_success', traceId, count: Array.isArray(contacts) ? contacts.length : 0 }))
+    return Array.isArray(contacts) ? contacts : []
   } catch (err) {
-    console.error(JSON.stringify({ event: 'contacts_generation_error', traceId, error: err instanceof Error ? err.message : 'unknown' }))
-    return accountAnalysis.contacts || []
+    console.error(JSON.stringify({ event: 'generate_contacts_error', traceId, error: err instanceof Error ? err.message : String(err) }))
+    return []
   }
 }
 
