@@ -211,12 +211,10 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
 
     // ÉTAPE 5 — Scraping LinkedIn (Apify) ou génération contacts (Claude)
     let finalContacts: any[] = []
-    let contactsSource: 'apify' | 'claude_fallback' | 'none' = 'none'
+    let contactSourceForDb: 'linkedin_apify' | 'ai_generated' = 'ai_generated'
 
     if (APIFY_API_TOKEN) {
-      // 5a. Scraper la page entreprise (infos complémentaires)
       const companyData = await scrapeLinkedInCompany(companyName, traceId)
-      
       if (companyData) {
         const updates: any = {}
         if (companyData.employeeCount && !analysis.employees) {
@@ -226,10 +224,7 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
           await supabase.from('accounts').update(updates).eq('id', accountId)
         }
       }
-
-      // 5b. Scraper les contacts LinkedIn (200+, 8 requêtes, 20 pages)
       const linkedinContacts = await scrapeLinkedInPeople(companyName, onboardingData, 200, traceId)
-
       console.log(JSON.stringify({
         event: 'apify_detail',
         traceId,
@@ -238,8 +233,7 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
         linkedinContactsCount: linkedinContacts?.length || 0,
         companyDataFound: !!companyData,
       }))
-
-      if (linkedinContacts.length > 0) {
+      if (Array.isArray(linkedinContacts) && linkedinContacts.length > 0) {
         finalContacts = await enrichLinkedInContactsWithClaude(
           linkedinContacts,
           companyName,
@@ -247,23 +241,17 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
           onboardingData,
           traceId
         )
-        contactsSource = 'apify'
-        console.log(JSON.stringify({ event: 'claude_enrichment_done', traceId }))
+        contactSourceForDb = 'linkedin_apify'
+        console.log(JSON.stringify({ event: 'contacts_source', traceId, source: 'apify_enriched', count: finalContacts.length }))
       } else {
-        // Apify a échoué (0 contacts) → fallback Claude
+        console.log(JSON.stringify({ event: 'apify_failed_fallback_claude', traceId }))
         finalContacts = await generateContactsWithClaude(companyName, analysis, onboardingData, traceId)
-        contactsSource = finalContacts.length > 0 ? 'claude_fallback' : 'none'
-        console.log(JSON.stringify({ event: 'contacts_claude_fallback', traceId, count: finalContacts.length }))
+        console.log(JSON.stringify({ event: 'contacts_source', traceId, source: 'claude_fallback', count: finalContacts.length }))
       }
-      console.log(JSON.stringify({ event: 'apify_done', traceId, linkedinContactsCount: finalContacts.length }))
     } else {
-      // Pas d'Apify → Claude directement
       finalContacts = await generateContactsWithClaude(companyName, analysis, onboardingData, traceId)
-      contactsSource = finalContacts.length > 0 ? 'claude_fallback' : 'none'
-      console.log(JSON.stringify({ event: 'contacts_claude_fallback', traceId, count: finalContacts.length }))
+      console.log(JSON.stringify({ event: 'contacts_source', traceId, source: 'claude_no_apify', count: finalContacts.length }))
     }
-
-    console.log(JSON.stringify({ event: 'contacts_source', traceId, source: contactsSource }))
 
     // ÉTAPE 7 — Sauvegarde finale (contacts + status completed)
     if (finalContacts.length > 0) {
@@ -284,7 +272,7 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
           email_message: c.emailMessage || null,
           linkedin_message: c.linkedinMessage || null,
           followup_message: c.followupMessage || null,
-          source: contactsSource === 'apify' ? 'linkedin_apify' : 'ai_generated',
+          source: contactSourceForDb,
         }))
       )
     }
