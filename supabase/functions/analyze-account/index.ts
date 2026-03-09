@@ -225,7 +225,7 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
         }
       }
 
-      let linkedinContacts: any[] = await scrapeLinkedInPeople(companyName, onboardingData, 200, traceId)
+      let linkedinContacts: any[] = await scrapeLinkedInPeople(companyName, onboardingData, 300, traceId)
       if (!Array.isArray(linkedinContacts)) linkedinContacts = []
       console.log(JSON.stringify({ event: 'apify_detail', traceId, apifyTokenPresent: true, apifyTokenLength: APIFY_API_TOKEN.length, linkedinContactsCount: linkedinContacts.length, companyDataFound: !!companyData }))
 
@@ -328,42 +328,34 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
 async function searchBrave(companyName: string, onboardingData: any, traceId: string) {
   if (!BRAVE_API_KEY) return { results: [], urls: [] }
   const year = new Date().getFullYear()
-  const offers = (onboardingData.offers || []).slice(0, 2).join(' ')
-  const sectors = (onboardingData.sectors || []).slice(0, 2).join(' ')
-  const baseQueries = [
+  const queries = [
     `${companyName} stratégie transformation digitale ${year}`,
-    `${companyName} projet cloud IA data cybersécurité programme investissement IT`,
-    `${companyName} recrutement DSI CTO nomination ${year} actualités`,
-    `${companyName} filiales organisation organigramme DSI direction SI`,
-    `${companyName} prestataire ESN intégrateur Capgemini Sopra Atos Accenture Devoteam`,
-    `${companyName} appel offres marché IT prestation informatique ${year}`,
+    `${companyName} projet migration cloud IA data programme IT ${year}`,
+    `${companyName} recrutement DSI CTO CDO nomination directeur IT ${year}`,
+    `${companyName} filiales BU organisation organigramme direction systèmes information`,
+    `${companyName} prestataire ESN intégrateur Capgemini Sopra Atos Accenture Devoteam CGI Alten`,
+    `${companyName} appel offres marché public IT prestation informatique ${year}`,
+    `${companyName} budget IT investissement technologie résultats financiers ${year}`,
+    `${companyName} ${(onboardingData.offers || []).slice(0, 3).join(' ')} ${(onboardingData.sectors || []).slice(0, 2).join(' ')}`,
   ]
-  const queries = [...baseQueries]
-  if (offers) queries.push(`${companyName} ${offers} recrutement projet ${year}`)
-  if (sectors) queries.push(`${companyName} ${sectors} transformation IT digital`)
-  if (onboardingData.mainChallenge) queries.push(`${companyName} ${onboardingData.mainChallenge} DSI décideurs`)
   let allResults: any[] = []
   try {
-    const batchSize = 3
-    for (let i = 0; i < queries.length; i += batchSize) {
-      const batch = queries.slice(i, i + batchSize)
-      const batchResults = await Promise.allSettled(
-        batch.map(async (q) => {
-          const res = await fetch(
-            `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=10`,
-            {
-              headers: { 'X-Subscription-Token': BRAVE_API_KEY },
-              signal: AbortSignal.timeout(10000),
-            }
-          )
-          const data = await res.json()
-          return data.web?.results || []
-        })
-      )
-      for (const result of batchResults) {
-        if (result.status === 'fulfilled') allResults.push(...result.value)
-      }
-      if (i + batchSize < queries.length) await new Promise(r => setTimeout(r, 500))
+    const batchSize = 8
+    const batchResults = await Promise.allSettled(
+      queries.slice(0, 8).map(async (q) => {
+        const res = await fetch(
+          `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=10`,
+          {
+            headers: { 'X-Subscription-Token': BRAVE_API_KEY },
+            signal: AbortSignal.timeout(10000),
+          }
+        )
+        const data = await res.json()
+        return data.web?.results || []
+      })
+    )
+    for (const result of batchResults) {
+      if (result.status === 'fulfilled') allResults.push(...result.value)
     }
     const seen = new Set<string>()
     const unique = allResults.filter((r: any) => {
@@ -371,7 +363,7 @@ async function searchBrave(companyName: string, onboardingData: any, traceId: st
       seen.add(r.url)
       return true
     })
-    const top = unique.slice(0, 30)
+    const top = unique.slice(0, 50)
     return {
       results: top.map((r: any) => ({ title: r.title, description: r.description, url: r.url })),
       urls: top.map((r: any) => r.url),
@@ -403,7 +395,7 @@ async function scrapePages(urls: string[], traceId: string) {
   const contents: string[] = []
   try {
     const prioritized = prioritizeUrls(urls)
-    const maxPages = Math.min(prioritized.length, 12)
+    const maxPages = Math.min(prioritized.length, 20)
     const batchSize = 4
     for (let i = 0; i < maxPages; i += batchSize) {
       const batch = prioritized.slice(i, i + batchSize)
@@ -424,7 +416,7 @@ async function scrapePages(urls: string[], traceId: string) {
           })
           const data = await res.json()
           if (data.data?.markdown) {
-            return `--- SOURCE: ${url} ---\n${data.data.markdown.slice(0, 4000)}`
+            return `--- SOURCE: ${url} ---\n${data.data.markdown.slice(0, 5000)}`
           }
           return null
         })
@@ -657,13 +649,25 @@ ${JSON.stringify(braveResults.results?.slice(0, 15), null, 2)}
 CONTENU SCRAPÉ (Firecrawl) — utilise l'intégralité pour extraire noms de programmes/projets, filiales, BU, signaux :
 ${scrapedContent.slice(0, 22000)}
 
+Produis une analyse EXHAUSTIVE. Je veux :
+- TOUTES les filiales et BU identifiées (pas juste le groupe)
+- TOUS les projets et programmes IT détectés avec leurs noms exacts
+- TOUS les signaux d'achat (recrutements, nominations, investissements, AO)
+- 5-7 angles d'attaque (pas 3)
+- Un plan d'action de 6-8 semaines (pas 4)
+- Le scoring détaillé avec justification par critère
+- Les ESN concurrentes identifiées en place
+- Les contraintes réglementaires applicables (NIS2, DORA, RGPD, etc.)
+- Le budget IT estimé si détectable
+- Les technologies dominantes détectées
+
 INSTRUCTIONS OBLIGATOIRES :
 1. NE GÉNÈRE PAS de contacts dans cette réponse (ils seront générés dans un appel séparé). Concentre-toi sur une analyse EXHAUSTIVE du compte avec un maximum de détails.
-2. Toutes les données scrapées doivent apparaître dans le rendu : ne pas se limiter à une sélection partielle. Extraire et afficher explicitement les noms de programmes et de projets détectés (champ programNames).
+2. Toutes les données scrapées doivent apparaître dans le rendu. Extraire et afficher explicitement les noms de programmes et de projets détectés (champ programNames).
 3. Cartographie exhaustive : lister TOUTES les entités du groupe (filiales, BU, start-ups internes), pas seulement le groupe global (champ entitiesExhaustive).
-4. Le plan d'actions doit être construit sur la base du questionnaire onboarding et de la mémoire RAG — pas de manière générique. Si ESN prioritaire, cible ou historique sont renseignés, ils doivent apparaître dans les recommandations.
-5. Produis les 4 sections dédiées : commentOuvrirCompte, offresAConstruire, planHebdomadaire, evaluationCompte (GO/NO GO avec justification).
-6. Chaque action du plan doit avoir : responsable suggéré, outil, deadline, KPI. Actions graduelles et séquencées selon la méthodologie (fiche identité → parties prenantes → besoins → concurrents → scoring → actions).
+4. Le plan d'actions doit être construit sur la base du questionnaire onboarding et de la mémoire RAG. Si ESN prioritaire, cible ou historique sont renseignés, ils doivent apparaître dans les recommandations.
+5. Produis les sections dédiées : commentOuvrirCompte (stratégie 300+ mots, entryPoints détaillés), offresAConstruire, planHebdomadaire, evaluationCompte, competitorsAnalysis.
+6. Chaque action du plan doit avoir : responsable suggéré, outil, deadline, KPI. Actions graduelles et séquencées selon la méthodologie.
 
 Produis un JSON avec EXACTEMENT la structure suivante (tous les champs sont requis, utiliser [] ou "" si non détecté). N'inclure PAS de tableau "contacts" :
 {
@@ -696,27 +700,33 @@ Produis un JSON avec EXACTEMENT la structure suivante (tous les champs sont requ
     ]
   },
   "commentOuvrirCompte": {
-    "strategy": "Stratégie d'entrée détaillée selon profil (taille, public/privé, référencement, ESN en place)",
-    "entryPoints": [{"label": "Porte d'entrée", "justification": "Pourquoi"}]
+    "strategy": "Stratégie d'entrée détaillée (300+ mots) avec justification basée sur la taille du compte, le référencement, les ESN en place",
+    "entryPoints": [{"label": "Nom du point d'entrée", "contact": "Quel contact cibler", "justification": "Pourquoi (100+ mots)", "risks": "Risques et objections possibles", "alternative": "Plan B si échec"}]
   },
   "offresAConstruire": {
-    "offers": [{"offer": "Offre ESN à proposer", "order": 1, "interlocutor": "Pour quel contact", "pitch": "Argumentaire adapté"}]
+    "offers": [{"offer": "Nom de l'offre", "order": 1, "interlocutor": "Quel décideur", "pitch": "Argumentaire détaillé 150+ mots", "tjmRange": "Fourchette TJM", "teamSize": "Taille équipe proposée", "duration": "Durée estimée"}]
   },
   "planHebdomadaire": {
     "methodology": "Fiche identité → parties prenantes → besoins → concurrents → scoring → actions",
     "weeks": [{"week": 1, "theme": "Thème", "actions": ["Action 1", "Action 2"]}]
   },
   "evaluationCompte": {
-    "goNoGo": "GO ou NO GO",
-    "scoreGlobal": 7,
-    "justification": "Justification claire basée sur données et questionnaire",
-    "recommandation": "Compte prioritaire ou non, prochaines étapes"
+    "goNoGo": "GO ou NO_GO",
+    "scoreGlobal": 8,
+    "justification": "Justification détaillée 200+ mots",
+    "recommandation": "Recommandation stratégique 100+ mots",
+    "risques": ["Risque 1", "Risque 2"],
+    "quickWins": ["Quick win 1", "Quick win 2"]
+  },
+  "competitorsAnalysis": {
+    "competitors": [{"name": "Nom ESN", "perimeter": "Périmètre couvert", "strength": "Forces", "weakness": "Faiblesses", "renewalDate": "Date renouvellement si connue", "attackVector": "Comment les déloger"}],
+    "uncoveredZones": ["Zone non couverte 1", "Zone 2"]
   }
 }
 
 Génère :
-- 3-5 angles d'attaque classés par score de priorité
-- Un plan d'action de 4 à 8 semaines (adapté au cycle de vente de l'ESN)`
+- 5-7 angles d'attaque classés par score de priorité
+- Un plan d'action de 6 à 8 semaines (adapté au cycle de vente de l'ESN)`
 
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -728,7 +738,7 @@ Génère :
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 8000,
+        max_tokens: 10000,
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
       }),
@@ -771,7 +781,12 @@ Génère :
     parsed.commentOuvrirCompte = parsed.commentOuvrirCompte && typeof parsed.commentOuvrirCompte === 'object' ? parsed.commentOuvrirCompte : { strategy: '', entryPoints: [] }
     parsed.offresAConstruire = parsed.offresAConstruire && typeof parsed.offresAConstruire === 'object' ? parsed.offresAConstruire : { offers: [] }
     parsed.planHebdomadaire = parsed.planHebdomadaire && typeof parsed.planHebdomadaire === 'object' ? parsed.planHebdomadaire : { methodology: '', weeks: [] }
-    parsed.evaluationCompte = parsed.evaluationCompte && typeof parsed.evaluationCompte === 'object' ? parsed.evaluationCompte : { goNoGo: '', scoreGlobal: 5, justification: '', recommandation: '' }
+    parsed.evaluationCompte = parsed.evaluationCompte && typeof parsed.evaluationCompte === 'object' ? parsed.evaluationCompte : { goNoGo: '', scoreGlobal: 5, justification: '', recommandation: '', risques: [], quickWins: [] }
+    if (parsed.evaluationCompte && !Array.isArray(parsed.evaluationCompte.risques)) parsed.evaluationCompte.risques = []
+    if (parsed.evaluationCompte && !Array.isArray(parsed.evaluationCompte.quickWins)) parsed.evaluationCompte.quickWins = []
+    parsed.competitorsAnalysis = parsed.competitorsAnalysis && typeof parsed.competitorsAnalysis === 'object' ? parsed.competitorsAnalysis : { competitors: [], uncoveredZones: [] }
+    if (parsed.competitorsAnalysis && !Array.isArray(parsed.competitorsAnalysis.competitors)) parsed.competitorsAnalysis.competitors = []
+    if (parsed.competitorsAnalysis && !Array.isArray(parsed.competitorsAnalysis.uncoveredZones)) parsed.competitorsAnalysis.uncoveredZones = []
     parsed.companyNameCorrected = parsed.companyNameCorrected || companyName
     parsed.notFound = !!parsed.notFound
     parsed.suggestions = Array.isArray(parsed.suggestions) ? parsed.suggestions : []
@@ -816,14 +831,15 @@ COMPTE :
 - Filiales : ${JSON.stringify(accountAnalysis.subsidiaries || [])}
 
 RÈGLES :
-- Génère EXACTEMENT 15 contacts variés
-- Couvre les niveaux : C-level, middle management, opérationnels, achats
+- Génère EXACTEMENT 20 contacts variés pour ${companyName}
+- Couvre TOUTES les entités et filiales identifiées. Pour chaque entité, génère 2-3 contacts.
+- Répartition : 3-4 sponsors (DSI, CTO, VP, DG filiale), 4-5 champions (Head of, Director, Manager), 5-6 opérationnels (Chef de projet, Tech Lead, Architecte), 2-3 achats (Dir Achats IT, Procurement), 2-3 influenceurs (RSSI, Architecte SI, CDO)
 - Chaque contact a un email, un message LinkedIn et une relance
 - Les messages mentionnent un enjeu SPÉCIFIQUE du compte
 - Utilise des noms fictifs réalistes pour une entreprise française
 - Réponds UNIQUEMENT en JSON valide, un tableau d'objets`
 
-  const userPrompt = `Génère 15 contacts pour ${companyName}.
+  const userPrompt = `Génère 20 contacts pour ${companyName}.
 Chaque contact :
 {
   "name": "Prénom Nom",
@@ -850,11 +866,11 @@ Chaque contact :
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 6000,
+        max_tokens: 8000,
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
       }),
-      signal: AbortSignal.timeout(90000),
+      signal: AbortSignal.timeout(120000),
     })
 
     if (!res.ok) {
@@ -935,12 +951,12 @@ async function scrapeLinkedInCompany(companyName: string, traceId: string): Prom
 }
 
 /**
- * Étape 5b — Scraper les contacts LinkedIn en masse (200+, 8 requêtes, 20 pages/requête)
+ * Étape 5b — Scraper les contacts LinkedIn en masse (300+, 10 requêtes, 30 pages/requête)
  */
 async function scrapeLinkedInPeople(
   companyName: string,
   onboardingData: any,
-  maxContacts: number = 200,
+  maxContacts: number = 300,
   traceId?: string
 ): Promise<any[]> {
   if (!APIFY_API_TOKEN) return []
@@ -949,21 +965,18 @@ async function scrapeLinkedInPeople(
     const excludedPersonas = onboardingData.excludedPersonas ?? ['Stagiaires', 'Marketing']
 
     const searchQueries: string[] = [
-      `DSI OR CTO OR "Chief Technology" OR "Chief Information" OR "VP Engineering" OR "Directeur Systèmes" "${companyName}"`,
-      `"Head of" OR "Director" OR "Responsable" IT OR Data OR Cloud OR Digital "${companyName}"`,
-      `"Chef de projet" OR "Project Manager" OR "Tech Lead" OR "Engineering Manager" "${companyName}"`,
-      `"Achats IT" OR "Procurement" OR "Sourcing" OR "Directeur Achats" "${companyName}"`,
-      `"RSSI" OR "CISO" OR "Sécurité" OR "Conformité" OR "Risk" "${companyName}"`,
-      `"CDO" OR "Chief Data" OR "Head of Data" OR "Data Engineer" OR "ML Engineer" "${companyName}"`,
-      `"Transformation" OR "Innovation" OR "Digital" OR "CDO" "${companyName}"`,
+      `DSI OR CTO OR "Chief Technology" OR "Chief Information" OR "VP Engineering" OR "VP IT" OR "Directeur Général" "${companyName}"`,
+      `"Head of" OR "Director" OR "Directeur" IT OR "Systèmes Information" OR Digital OR Technology "${companyName}"`,
+      `"Responsable" OR "Manager" IT OR Data OR Cloud OR Infrastructure OR "Programme" "${companyName}"`,
+      `"Chef de projet" OR "Project Manager" OR "Tech Lead" OR "Lead Developer" OR "Architecte" "${companyName}"`,
+      `"Achats" OR "Procurement" OR "Sourcing" OR "Purchasing" OR "Référencement" IT "${companyName}"`,
+      `"CDO" OR "Chief Data" OR "Head of Data" OR "Data Engineer" OR "Data Scientist" OR "ML Engineer" "${companyName}"`,
+      `"RSSI" OR "CISO" OR "Sécurité" OR "Cybersécurité" OR "Conformité" OR "Risk" OR "DPO" "${companyName}"`,
+      `"Cloud" OR "DevOps" OR "SRE" OR "Infrastructure" OR "Platform" OR "AWS" OR "Azure" "${companyName}"`,
+      `"Transformation" OR "Innovation" OR "Digital" OR "Change" OR "Stratégie IT" "${companyName}"`,
+      ...personas.map((p: string) => `${p.replace(/\//g, ' OR ')} "${companyName}"`),
     ]
-    for (const persona of personas) {
-      const cleanPersona = persona.replace(/\//g, ' OR ').replace(/DSI/g, '"DSI"').replace(/CTO/g, '"CTO"').replace(/CDO/g, '"CDO"')
-      if (!searchQueries.some(q => q.includes(cleanPersona))) {
-        searchQueries.push(`${cleanPersona} "${companyName}"`)
-      }
-    }
-    const finalQueries = searchQueries.slice(0, 8)
+    const finalQueries = searchQueries.slice(0, 10)
 
     const actorId = 'curious_coder~linkedin-people-search'
     const runRes = await fetch(`https://api.apify.com/v2/acts/${actorId}/runs?token=${APIFY_API_TOKEN}`, {
@@ -972,7 +985,7 @@ async function scrapeLinkedInPeople(
       body: JSON.stringify({
         queries: finalQueries,
         maxResults: Math.ceil(maxContacts / finalQueries.length),
-        maxPages: 20,
+        maxPages: 30,
       }),
       signal: AbortSignal.timeout(10000),
     })
@@ -1158,7 +1171,7 @@ FORMAT DE SORTIE — JSON STRICT
 
 Réponds UNIQUEMENT en JSON valide. Un tableau d'objets. Pas de texte avant/après.`
 
-  const contactsList = linkedinContacts.slice(0, 50).map(c => ({
+  const contactsList = linkedinContacts.slice(0, 80).map(c => ({
     name: c.fullName || c.name,
     title: c.title || c.headline,
     company: c.company || companyName,
