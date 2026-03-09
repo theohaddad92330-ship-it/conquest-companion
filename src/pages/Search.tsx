@@ -47,6 +47,21 @@ const LOADING_MESSAGES = [
   "Les premières étapes (recherche + analyse) prennent en général 1 à 2 minutes.",
 ];
 
+// Messages déroulants affichés un par un pendant le chargement (rotation toutes les 8 s)
+const ROTATING_INFO_MESSAGES = [
+  "Recherche Brave : jusqu'à 50 résultats web sur l'entreprise et son écosystème.",
+  "Scraping Firecrawl : extraction du contenu des pages les plus pertinentes.",
+  "Analyse Claude : synthèse du secteur, des enjeux IT et du plan d'action.",
+  "Recherche LinkedIn (Apify) : identification des décideurs et des bons contacts.",
+  "Enrichissement des contacts : qualification des rôles et priorisation.",
+  "Génération des messages : emails, LinkedIn et relances personnalisés par contact.",
+  "Cartographie des entités : filiales, BU et organigramme du compte.",
+  "Votre fiche compte sera prête dans quelques instants.",
+  "Les données sont rafraîchies automatiquement toutes les 2 secondes.",
+  "Vous pouvez suivre l'avancement étape par étape ci-dessous.",
+];
+const ROTATION_INTERVAL_SECONDS = 8;
+
 export default function SearchPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -71,6 +86,12 @@ export default function SearchPage() {
   useEffect(() => {
     if (analysis.status === "loading" && analysis.accountId) setElapsedSeconds(0);
   }, [analysis.status, analysis.accountId]);
+
+  const rotatingMessageIndex = useMemo(
+    () => Math.floor(elapsedSeconds / ROTATION_INTERVAL_SECONDS) % ROTATING_INFO_MESSAGES.length,
+    [elapsedSeconds]
+  );
+  const currentRotatingMessage = ROTATING_INFO_MESSAGES[rotatingMessageIndex];
 
   const steps = useMemo<Step[]>(() => {
     const base = initialSteps.map((s) => ({ ...s, status: "pending" as const, duration: undefined }));
@@ -279,6 +300,9 @@ export default function SearchPage() {
                       </Button>
                     </div>
                   </div>
+                  <p className="text-sm text-muted-foreground italic border-l-2 border-primary/30 pl-3 py-1.5 bg-muted/30 rounded-r">
+                    {currentRotatingMessage}
+                  </p>
                   <ul className="text-xs text-muted-foreground mb-3 space-y-1 list-disc list-inside">
                     {LOADING_MESSAGES.map((msg, i) => (
                       <li key={i}>{msg}</li>

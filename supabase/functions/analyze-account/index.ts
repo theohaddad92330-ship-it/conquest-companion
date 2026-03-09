@@ -209,67 +209,12 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
       })
     }
 
-    // ===== ÉTAPE 5 — CONTACTS =====
-    let finalContacts: any[] = []
-    let contactSourceForDb: 'linkedin_apify' | 'ai_generated' = 'ai_generated'
-    console.log(JSON.stringify({ event: 'contact_phase_start', traceId, hasApify: !!APIFY_API_TOKEN }))
+    // ===== CONTACTS : directement depuis l'analyse Claude (un seul appel) =====
+    const finalContacts: any[] = Array.isArray(analysis.contacts) ? analysis.contacts : []
+    const contactSourceForDb: 'linkedin_apify' | 'ai_generated' = 'ai_generated'
+    console.log(JSON.stringify({ event: 'contacts_from_claude', traceId, count: finalContacts.length }))
 
-    if (APIFY_API_TOKEN) {
-      const companyData = await scrapeLinkedInCompany(companyName, traceId)
-      if (companyData) {
-        const updates: any = {}
-        if (companyData.employeeCount && !analysis.employees) {
-          updates.employees = `~${companyData.employeeCount} collaborateurs`
-        }
-        if (Object.keys(updates).length > 0) {
-          await supabase.from('accounts').update(updates).eq('id', accountId)
-        }
-      }
-
-      let linkedinContacts: any[] = await scrapeLinkedInPeople(companyName, onboardingData, 300, traceId)
-      if (!Array.isArray(linkedinContacts)) linkedinContacts = []
-      console.log(JSON.stringify({ event: 'apify_detail', traceId, apifyTokenPresent: true, apifyTokenLength: APIFY_API_TOKEN.length, linkedinContactsCount: linkedinContacts.length, companyDataFound: !!companyData }))
-
-      if (linkedinContacts.length > 0) {
-        finalContacts = await enrichLinkedInContactsWithClaude(linkedinContacts, companyName, analysis, onboardingData, traceId)
-        contactSourceForDb = 'linkedin_apify'
-        console.log(JSON.stringify({ event: 'contacts_source', traceId, source: 'apify_enriched', count: finalContacts.length }))
-      } else {
-        console.log(JSON.stringify({ event: 'step5_apify_fallback', traceId, reason: 'linkedinContacts_empty' }))
-        console.log(JSON.stringify({ event: 'apify_failed_using_claude_fallback', traceId }))
-        console.log(JSON.stringify({ event: 'about_to_call_generate_contacts', traceId }))
-        try {
-          finalContacts = await generateContactsWithClaude(companyName, analysis, onboardingData, traceId)
-        } catch (genErr) {
-          console.error(JSON.stringify({ event: 'generate_contacts_crash', traceId, error: genErr instanceof Error ? genErr.message : String(genErr) }))
-          finalContacts = []
-        }
-        console.log(JSON.stringify({ event: 'contacts_source', traceId, source: 'claude_fallback_after_apify', count: finalContacts.length }))
-      }
-    } else {
-      console.log(JSON.stringify({ event: 'no_apify_using_claude', traceId }))
-      try {
-        finalContacts = await generateContactsWithClaude(companyName, analysis, onboardingData, traceId)
-      } catch (genErr) {
-        console.error(JSON.stringify({ event: 'generate_contacts_crash', traceId, error: genErr instanceof Error ? genErr.message : String(genErr) }))
-        finalContacts = []
-      }
-      console.log(JSON.stringify({ event: 'contacts_source', traceId, source: 'claude_no_apify', count: finalContacts.length }))
-    }
-
-    // FILET DE SÉCURITÉ : si après tout on a toujours 0 contacts
-    if (finalContacts.length === 0) {
-      console.log(JSON.stringify({ event: 'last_resort_fallback', traceId }))
-      try {
-        finalContacts = await generateContactsWithClaude(companyName, analysis, onboardingData, traceId)
-      } catch (genErr) {
-        console.error(JSON.stringify({ event: 'generate_contacts_crash', traceId, error: genErr instanceof Error ? genErr.message : String(genErr) }))
-        finalContacts = []
-      }
-      console.log(JSON.stringify({ event: 'contacts_source', traceId, source: 'last_resort', count: finalContacts.length }))
-    }
-
-    // ÉTAPE 7 — Sauvegarde finale (contacts + status completed)
+    // ÉTAPE 6 — Sauvegarde finale (contacts + status completed)
     if (finalContacts.length > 0) {
       await supabase.from('contacts').insert(
         finalContacts.map((c: any, i: number) => ({
@@ -297,7 +242,6 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
     const estimatedCost = 0.003 * (scrapedContent.length / 1000)
       + 0.005 * (braveResults.results?.length || 0)
       + 0.1
-      + (APIFY_API_TOKEN ? 3.0 : 0)
     console.log(JSON.stringify({ event: 'step7_before_completed', traceId, finalContactsCount: finalContacts.length }))
     const { error: updateStatusError } = await supabase.from('accounts').update({
       status: 'completed',
@@ -335,17 +279,11 @@ async function searchBrave(companyName: string, onboardingData: any, traceId: st
     `${companyName} stratégie transformation digitale ${year}`,
     `${companyName} projet migration cloud IA data programme IT ${year}`,
     `${companyName} recrutement DSI CTO CDO nomination directeur IT ${year}`,
-    `${companyName} filiales BU organisation organigramme direction systèmes information`,
-    `${companyName} prestataire ESN intégrateur Capgemini Sopra Atos Accenture Devoteam CGI Alten`,
-    `${companyName} appel offres marché public IT prestation informatique ${year}`,
-    `${companyName} budget IT investissement technologie résultats financiers ${year}`,
-    `${companyName} ${(onboardingData.offers || []).slice(0, 3).join(' ')} ${(onboardingData.sectors || []).slice(0, 2).join(' ')}`,
   ]
   let allResults: any[] = []
   try {
-    const batchSize = 8
     const batchResults = await Promise.allSettled(
-      queries.slice(0, 8).map(async (q) => {
+      queries.slice(0, 3).map(async (q) => {
         const res = await fetch(
           `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=10`,
           {
@@ -398,7 +336,7 @@ async function scrapePages(urls: string[], traceId: string) {
   const contents: string[] = []
   try {
     const prioritized = prioritizeUrls(urls)
-    const maxPages = Math.min(prioritized.length, 20)
+    const maxPages = Math.min(prioritized.length, 5)
     const batchSize = 4
     for (let i = 0; i < maxPages; i += batchSize) {
       const batch = prioritized.slice(i, i + batchSize)
@@ -665,14 +603,14 @@ Produis une analyse EXHAUSTIVE. Je veux :
 - Les technologies dominantes détectées
 
 INSTRUCTIONS OBLIGATOIRES :
-1. NE GÉNÈRE PAS de contacts dans cette réponse (ils seront générés dans un appel séparé). Concentre-toi sur une analyse EXHAUSTIVE du compte avec un maximum de détails.
-2. Toutes les données scrapées doivent apparaître dans le rendu. Extraire et afficher explicitement les noms de programmes et de projets détectés (champ programNames).
-3. Cartographie exhaustive : lister TOUTES les entités du groupe (filiales, BU, start-ups internes), pas seulement le groupe global (champ entitiesExhaustive).
-4. Le plan d'actions doit être construit sur la base du questionnaire onboarding et de la mémoire RAG. Si ESN prioritaire, cible ou historique sont renseignés, ils doivent apparaître dans les recommandations.
-5. Produis les sections dédiées : commentOuvrirCompte (stratégie 300+ mots, entryPoints détaillés), offresAConstruire, planHebdomadaire, evaluationCompte, competitorsAnalysis.
-6. Chaque action du plan doit avoir : responsable suggéré, outil, deadline, KPI. Actions graduelles et séquencées selon la méthodologie.
+1. Toutes les données scrapées doivent apparaître dans le rendu. Extraire et afficher explicitement les noms de programmes et de projets détectés (champ programNames).
+2. Cartographie exhaustive : lister TOUTES les entités du groupe (filiales, BU, start-ups internes), pas seulement le groupe global (champ entitiesExhaustive).
+3. Le plan d'actions doit être construit sur la base du questionnaire onboarding et de la mémoire RAG. Si ESN prioritaire, cible ou historique sont renseignés, ils doivent apparaître dans les recommandations.
+4. Produis les sections dédiées : commentOuvrirCompte, offresAConstruire, planHebdomadaire, evaluationCompte, competitorsAnalysis.
+5. Chaque action du plan doit avoir : responsable suggéré, outil, deadline, KPI.
+6. Génère des dizaines de contacts variés couvrant tous les niveaux (DSI, managers, opérationnels, achats, sécurité). Chaque contact avec un email, un message LinkedIn et une relance personnalisés. Minimum 50 contacts avec messages.
 
-Produis un JSON avec EXACTEMENT la structure suivante (tous les champs sont requis, utiliser [] ou "" si non détecté). N'inclure PAS de tableau "contacts" :
+Produis un JSON avec EXACTEMENT la structure suivante (tous les champs sont requis, utiliser [] ou "" si non détecté). Inclure le tableau "contacts" :
 {
   "companyNameCorrected": "Nom exact et correct de l'entreprise",
   "notFound": false,
@@ -689,6 +627,22 @@ Produis un JSON avec EXACTEMENT la structure suivante (tous les champs sont requ
   "recentSignals": ["Signal 1", "Signal 2", "Signal 3", "Signal 4"],
   "priorityScore": 7,
   "priorityJustification": "Justification du score",
+  "contacts": [
+    {
+      "name": "Prénom Nom",
+      "title": "Poste",
+      "entity": "Filiale/BU",
+      "role": "sponsor|champion|operational|purchasing|influencer",
+      "priority": 1,
+      "summary": "Résumé profil",
+      "whyContact": "Pourquoi le contacter",
+      "email": "prenom.nom@entreprise.com",
+      "linkedin": "linkedin.com/in/prenomnom",
+      "emailMessage": {"subject": "Objet", "body": "Corps email"},
+      "linkedinMessage": "Message LinkedIn",
+      "followupMessage": {"subject": "RE: Objet", "body": "Relance"}
+    }
+  ],
   "angles": [
     {"title": "Angle 1 — Titre", "description": "Description", "entry": "Point d'entrée → escalade"}
   ],
@@ -728,6 +682,7 @@ Produis un JSON avec EXACTEMENT la structure suivante (tous les champs sont requ
 }
 
 Génère :
+- Minimum 50 contacts avec messages (email, LinkedIn, relance) — couvrant DSI, managers, opérationnels, achats, sécurité
 - 5-7 angles d'attaque classés par score de priorité
 - Un plan d'action de 6 à 8 semaines (adapté au cycle de vente de l'ESN)`
 
@@ -741,7 +696,7 @@ Génère :
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 10000,
+        max_tokens: 12000,
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
       }),
