@@ -212,6 +212,7 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
     // ===== ÉTAPE 5 — CONTACTS =====
     let finalContacts: any[] = []
     let contactSourceForDb: 'linkedin_apify' | 'ai_generated' = 'ai_generated'
+    console.log(JSON.stringify({ event: 'contact_phase_start', traceId, hasApify: !!APIFY_API_TOKEN }))
 
     if (APIFY_API_TOKEN) {
       const companyData = await scrapeLinkedInCompany(companyName, traceId)
@@ -236,6 +237,7 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
       } else {
         console.log(JSON.stringify({ event: 'step5_apify_fallback', traceId, reason: 'linkedinContacts_empty' }))
         console.log(JSON.stringify({ event: 'apify_failed_using_claude_fallback', traceId }))
+        console.log(JSON.stringify({ event: 'about_to_call_generate_contacts', traceId }))
         try {
           finalContacts = await generateContactsWithClaude(companyName, analysis, onboardingData, traceId)
         } catch (genErr) {
@@ -262,6 +264,7 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
         finalContacts = await generateContactsWithClaude(companyName, analysis, onboardingData, traceId)
       } catch (genErr) {
         console.error(JSON.stringify({ event: 'generate_contacts_crash', traceId, error: genErr instanceof Error ? genErr.message : String(genErr) }))
+        finalContacts = []
       }
       console.log(JSON.stringify({ event: 'contacts_source', traceId, source: 'last_resort', count: finalContacts.length }))
     }
