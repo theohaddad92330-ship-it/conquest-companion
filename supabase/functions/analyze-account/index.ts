@@ -125,6 +125,7 @@ serve(async (req) => {
 // ============================================
 async function processAnalysis(supabase: any, accountId: string, userId: string, companyName: string, userContext: string | null, onboardingData: any) {
   const traceId = crypto.randomUUID().slice(0, 8)
+  const startTime = Date.now()
   console.log(JSON.stringify({ event: 'analysis_start', traceId, accountId, companyName, userId }))
 
   try {
@@ -209,65 +210,14 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
       })
     }
 
-    // ===== ÉTAPE 5 — CONTACTS =====
-    let finalContacts: any[] = []
-    let contactSourceForDb: 'linkedin_apify' | 'ai_generated' = 'ai_generated'
-    console.log(JSON.stringify({ event: 'contact_phase_start', traceId, hasApify: !!APIFY_API_TOKEN }))
+    // ===== ÉTAPE 5 — CONTACTS (directement depuis l'analyse Claude) =====
+    const startContacts = Date.now()
+    let finalContacts: any[] = analysis.contacts || []
+    console.log(JSON.stringify({ event: 'contacts_from_analysis', traceId, count: finalContacts.length }))
 
-    if (APIFY_API_TOKEN) {
-      const companyData = await scrapeLinkedInCompany(companyName, traceId)
-      if (companyData) {
-        const updates: any = {}
-        if (companyData.employeeCount && !analysis.employees) {
-          updates.employees = `~${companyData.employeeCount} collaborateurs`
-        }
-        if (Object.keys(updates).length > 0) {
-          await supabase.from('accounts').update(updates).eq('id', accountId)
-        }
-      }
-
-      let linkedinContacts: any[] = await scrapeLinkedInPeople(companyName, onboardingData, 300, traceId)
-      if (!Array.isArray(linkedinContacts)) linkedinContacts = []
-      console.log(JSON.stringify({ event: 'apify_detail', traceId, apifyTokenPresent: true, apifyTokenLength: APIFY_API_TOKEN.length, linkedinContactsCount: linkedinContacts.length, companyDataFound: !!companyData }))
-
-      if (linkedinContacts.length > 0) {
-        finalContacts = await enrichLinkedInContactsWithClaude(linkedinContacts, companyName, analysis, onboardingData, traceId)
-        contactSourceForDb = 'linkedin_apify'
-        console.log(JSON.stringify({ event: 'contacts_source', traceId, source: 'apify_enriched', count: finalContacts.length }))
-      } else {
-        console.log(JSON.stringify({ event: 'step5_apify_fallback', traceId, reason: 'linkedinContacts_empty' }))
-        console.log(JSON.stringify({ event: 'apify_failed_using_claude_fallback', traceId }))
-        console.log(JSON.stringify({ event: 'about_to_call_generate_contacts', traceId }))
-        try {
-          finalContacts = await generateContactsWithClaude(companyName, analysis, onboardingData, traceId)
-        } catch (genErr) {
-          console.error(JSON.stringify({ event: 'generate_contacts_crash', traceId, error: genErr instanceof Error ? genErr.message : String(genErr) }))
-          finalContacts = []
-        }
-        console.log(JSON.stringify({ event: 'contacts_source', traceId, source: 'claude_fallback_after_apify', count: finalContacts.length }))
-      }
-    } else {
-      console.log(JSON.stringify({ event: 'no_apify_using_claude', traceId }))
-      try {
-        finalContacts = await generateContactsWithClaude(companyName, analysis, onboardingData, traceId)
-      } catch (genErr) {
-        console.error(JSON.stringify({ event: 'generate_contacts_crash', traceId, error: genErr instanceof Error ? genErr.message : String(genErr) }))
-        finalContacts = []
-      }
-      console.log(JSON.stringify({ event: 'contacts_source', traceId, source: 'claude_no_apify', count: finalContacts.length }))
-    }
-
-    // FILET DE SÉCURITÉ : si après tout on a toujours 0 contacts
-    if (finalContacts.length === 0) {
-      console.log(JSON.stringify({ event: 'last_resort_fallback', traceId }))
-      try {
-        finalContacts = await generateContactsWithClaude(companyName, analysis, onboardingData, traceId)
-      } catch (genErr) {
-        console.error(JSON.stringify({ event: 'generate_contacts_crash', traceId, error: genErr instanceof Error ? genErr.message : String(genErr) }))
-        finalContacts = []
-      }
-      console.log(JSON.stringify({ event: 'contacts_source', traceId, source: 'last_resort', count: finalContacts.length }))
-    }
+    // Note: Apify est désactivé temporairement (timeout trop long + 0 crédits utilisés).
+    // Les contacts sont générés par Claude dans l'appel principal.
+    // Apify sera réactivé quand on aura un plan Supabase Pro (timeout 400s).
 
     // ÉTAPE 7 — Sauvegarde finale (contacts + status completed)
     if (finalContacts.length > 0) {
@@ -288,7 +238,7 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
           email_message: c.emailMessage || null,
           linkedin_message: c.linkedinMessage || null,
           followup_message: c.followupMessage || null,
-          source: contactSourceForDb,
+          source: 'ai_generated',
         }))
       )
     }
@@ -309,7 +259,7 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
       console.log(JSON.stringify({ event: 'step7_completed_ok', traceId, accountId }))
     }
 
-    console.log(JSON.stringify({ event: 'analysis_complete', traceId, accountId }))
+    console.log(JSON.stringify({ event: 'analysis_complete', traceId, accountId, totalSeconds: Math.round((Date.now() - startTime) / 1000) }))
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : 'unknown'
     console.error(JSON.stringify({ event: 'analysis_error', traceId, accountId, error: errMsg }))
@@ -331,21 +281,16 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
 async function searchBrave(companyName: string, onboardingData: any, traceId: string) {
   if (!BRAVE_API_KEY) return { results: [], urls: [] }
   const year = new Date().getFullYear()
+  // 3 requêtes ciblées (au lieu de 8) pour rester dans le timeout Edge Function
   const queries = [
-    `${companyName} stratégie transformation digitale ${year}`,
-    `${companyName} projet migration cloud IA data programme IT ${year}`,
-    `${companyName} recrutement DSI CTO CDO nomination directeur IT ${year}`,
-    `${companyName} filiales BU organisation organigramme direction systèmes information`,
-    `${companyName} prestataire ESN intégrateur Capgemini Sopra Atos Accenture Devoteam CGI Alten`,
-    `${companyName} appel offres marché public IT prestation informatique ${year}`,
-    `${companyName} budget IT investissement technologie résultats financiers ${year}`,
-    `${companyName} ${(onboardingData.offers || []).slice(0, 3).join(' ')} ${(onboardingData.sectors || []).slice(0, 2).join(' ')}`,
+    `${companyName} stratégie transformation digitale projet IT ${year}`,
+    `${companyName} recrutement DSI CTO nomination filiales organisation`,
+    `${companyName} prestataire ESN budget IT investissement ${year}`,
   ]
   let allResults: any[] = []
   try {
-    const batchSize = 8
     const batchResults = await Promise.allSettled(
-      queries.slice(0, 8).map(async (q) => {
+      queries.map(async (q) => {
         const res = await fetch(
           `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=10`,
           {
@@ -398,12 +343,12 @@ async function scrapePages(urls: string[], traceId: string) {
   const contents: string[] = []
   try {
     const prioritized = prioritizeUrls(urls)
-    const maxPages = Math.min(prioritized.length, 20)
-    const batchSize = 4
-    for (let i = 0; i < maxPages; i += batchSize) {
-      const batch = prioritized.slice(i, i + batchSize)
+    // 5 pages max, toutes en parallèle (pas de batchs) pour rester dans le timeout
+    const maxPages = Math.min(prioritized.length, 5)
+    const pagesToScrape = prioritized.slice(0, maxPages)
+    {
       const batchResults = await Promise.allSettled(
-        batch.map(async (url) => {
+        pagesToScrape.map(async (url) => {
           const res = await fetch('https://api.firecrawl.dev/v1/scrape', {
             method: 'POST',
             headers: {
@@ -427,7 +372,6 @@ async function scrapePages(urls: string[], traceId: string) {
       for (const result of batchResults) {
         if (result.status === 'fulfilled' && result.value) contents.push(result.value)
       }
-      if (i + batchSize < maxPages) await new Promise(r => setTimeout(r, 300))
     }
     return contents.join('\n\n')
   } catch (err) {
@@ -647,10 +591,10 @@ RÈGLES SUR LE NOM DE L'ENTREPRISE (affichage uniquement — ne jamais faire éc
 ${ragContext ? `\nBASE DE CONNAISSANCES ESN (à utiliser pour adapter le plan et éviter de répéter ce qui a déjà été fait) :\n${ragContext}\n` : ''}
 
 DONNÉES WEB (Brave Search) — utilise TOUS les résultats pour sourcer tes réponses :
-${JSON.stringify(braveResults.results?.slice(0, 15), null, 2)}
+${JSON.stringify(braveResults.results?.slice(0, 10), null, 2)}
 
 CONTENU SCRAPÉ (Firecrawl) — utilise l'intégralité pour extraire noms de programmes/projets, filiales, BU, signaux :
-${scrapedContent.slice(0, 22000)}
+${scrapedContent.slice(0, 12000)}
 
 Produis une analyse EXHAUSTIVE. Je veux :
 - TOUTES les filiales et BU identifiées (pas juste le groupe)
@@ -665,14 +609,14 @@ Produis une analyse EXHAUSTIVE. Je veux :
 - Les technologies dominantes détectées
 
 INSTRUCTIONS OBLIGATOIRES :
-1. NE GÉNÈRE PAS de contacts dans cette réponse (ils seront générés dans un appel séparé). Concentre-toi sur une analyse EXHAUSTIVE du compte avec un maximum de détails.
+1. Génère 15 à 20 contacts variés couvrant tous les niveaux (DSI, managers, opérationnels, achats, sécurité). Chaque contact avec email, message LinkedIn et relance personnalisés mentionnant un enjeu SPÉCIFIQUE du compte.
 2. Toutes les données scrapées doivent apparaître dans le rendu. Extraire et afficher explicitement les noms de programmes et de projets détectés (champ programNames).
 3. Cartographie exhaustive : lister TOUTES les entités du groupe (filiales, BU, start-ups internes), pas seulement le groupe global (champ entitiesExhaustive).
 4. Le plan d'actions doit être construit sur la base du questionnaire onboarding et de la mémoire RAG. Si ESN prioritaire, cible ou historique sont renseignés, ils doivent apparaître dans les recommandations.
-5. Produis les sections dédiées : commentOuvrirCompte (stratégie 300+ mots, entryPoints détaillés), offresAConstruire, planHebdomadaire, evaluationCompte, competitorsAnalysis.
-6. Chaque action du plan doit avoir : responsable suggéré, outil, deadline, KPI. Actions graduelles et séquencées selon la méthodologie.
+5. Produis les sections dédiées : commentOuvrirCompte, offresAConstruire, planHebdomadaire, evaluationCompte, competitorsAnalysis.
+6. Chaque action du plan doit avoir : responsable suggéré, outil, deadline, KPI.
 
-Produis un JSON avec EXACTEMENT la structure suivante (tous les champs sont requis, utiliser [] ou "" si non détecté). N'inclure PAS de tableau "contacts" :
+Produis un JSON avec EXACTEMENT la structure suivante (tous les champs sont requis, utiliser [] ou "" si non détecté) :
 {
   "companyNameCorrected": "Nom exact et correct de l'entreprise",
   "notFound": false,
@@ -683,12 +627,28 @@ Produis un JSON avec EXACTEMENT la structure suivante (tous les champs sont requ
   "headquarters": "Ville du siège",
   "website": "URL du site",
   "subsidiaries": ["Filiale 1", "Filiale 2"],
-  "programNames": ["Nom programme ou projet détecté dans offres d'emploi / web"],
+  "programNames": ["Nom programme ou projet détecté"],
   "entitiesExhaustive": [{"name": "Nom entité", "type": "filiale|BU|startup_interne|groupe", "parent": "Parent si applicable"}],
   "itChallenges": ["Enjeu 1", "Enjeu 2", "Enjeu 3", "Enjeu 4"],
   "recentSignals": ["Signal 1", "Signal 2", "Signal 3", "Signal 4"],
   "priorityScore": 7,
   "priorityJustification": "Justification du score",
+  "contacts": [
+    {
+      "name": "Prénom Nom",
+      "title": "Poste",
+      "entity": "Filiale/BU",
+      "role": "sponsor|champion|operational|purchasing|influencer",
+      "priority": 1,
+      "summary": "Résumé profil 2 phrases",
+      "whyContact": "Pourquoi le contacter",
+      "email": "prenom.nom@entreprise.com",
+      "linkedin": "linkedin.com/in/prenomnom",
+      "emailMessage": {"subject": "Objet max 60 car", "body": "Corps email max 150 mots"},
+      "linkedinMessage": "Message LinkedIn max 300 car",
+      "followupMessage": {"subject": "RE: Objet", "body": "Relance max 80 mots"}
+    }
+  ],
   "angles": [
     {"title": "Angle 1 — Titre", "description": "Description", "entry": "Point d'entrée → escalade"}
   ],
@@ -728,8 +688,9 @@ Produis un JSON avec EXACTEMENT la structure suivante (tous les champs sont requ
 }
 
 Génère :
+- 15 à 20 contacts variés (DSI, managers, chefs de projet, achats, data, cloud, sécurité) avec messages personnalisés
 - 5-7 angles d'attaque classés par score de priorité
-- Un plan d'action de 6 à 8 semaines (adapté au cycle de vente de l'ESN)`
+- Un plan d'action de 4 à 6 semaines (adapté au cycle de vente de l'ESN)`
 
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -741,7 +702,7 @@ Génère :
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 10000,
+        max_tokens: 12000,
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
       }),
@@ -1360,5 +1321,3 @@ function generateFallbackAnalysis(companyName: string, onboardingData: any) {
     evaluationCompte: { goNoGo: 'GO', scoreGlobal: 7, justification: '[Démo] Compte généré automatiquement.', recommandation: 'Prioriser les contacts opérationnels.' },
   }
 }
-
-
