@@ -589,16 +589,19 @@ Génère :
 
     let data: any
     try {
-      data = await callClaude('primary', { system: systemPrompt, user: userPrompt, maxTokens: 6000, timeoutMs: 60000 })
+      // Donne plus de temps à Anthropic (les Edge Functions peuvent dépasser 60s sur un run waitUntil)
+      data = await callClaude('primary', { system: systemPrompt, user: userPrompt, maxTokens: 3500, timeoutMs: 90000 })
     } catch (primaryErr) {
       console.error(JSON.stringify({ event: 'claude_primary_failed', traceId, error: primaryErr instanceof Error ? primaryErr.message : 'unknown' }))
       // Retry ultra-compact (moins de contexte + moins d'output)
       const retryUserPrompt = `Analyse le compte "${companyName}".\n\nSOURCES (Brave):\n${JSON.stringify(braveResults.results?.slice(0, 3), null, 2)}\n\nSCRAP (Firecrawl extrait):\n${scrapedContent.slice(0, 3000)}\n\nRetourne le JSON attendu. Génère 10 contacts maximum.`
       try {
-        data = await callClaude('retry_compact', { system: systemPrompt, user: retryUserPrompt, maxTokens: 3500, timeoutMs: 45000 })
+        data = await callClaude('retry_compact', { system: systemPrompt, user: retryUserPrompt, maxTokens: 2000, timeoutMs: 60000 })
       } catch (retryErr) {
         console.error(JSON.stringify({ event: 'claude_retry_failed', traceId, error: retryErr instanceof Error ? retryErr.message : 'unknown' }))
-        return generateFallbackAnalysis(companyName, onboardingData)
+        // IMPORTANT : ne pas renvoyer de données de démo si une clé est configurée.
+        // On préfère échouer clairement pour diagnostiquer.
+        throw new Error('Claude failed (timeout/HTTP/parse). Refusing to return demo fallback.')
       }
     }
     const text = data.content?.[0]?.text || '{}'
