@@ -401,200 +401,32 @@ async function analyzeWithClaude(companyName: string, braveResults: any, scraped
     return generateFallbackAnalysis(companyName, onboardingData)
   }
 
-  // PROMPT 1 — MASTER SYSTEM (BELLUM)
-  const systemPrompt = `Tu es BELLUM, l'agent d'intelligence commerciale de BellumAI.
-Tu produis des plans de conquête B2B structurés et actionnables pour des commerciaux d'ESN (Entreprises de Services Numériques).
+  // PROMPT — version compacte (évite timeout Anthropic)
+  const systemPrompt = `Tu es BELLUM (prospection ESN). Réponds UNIQUEMENT en JSON valide, en français.
 
-Tu es un stratège commercial expert en vente de services IT. Tu maîtrises :
-- La vente en ESN (régie, forfait, conseil) à des PME, ETI et grands groupes
-- Les cycles d'achat IT en France (référencement, appels d'offres, achats directs)
-- La cartographie décisionnelle et les dynamiques d'influence en entreprise
-- L'intelligence économique appliquée à la prospection B2B
+Profil ESN:
+- Offres: ${JSON.stringify(onboardingData.offers || [])}
+- Secteurs: ${JSON.stringify(onboardingData.sectors || [])}
+- Personas cibles: ${JSON.stringify(onboardingData.personas || [])}
+- Personas à exclure: ${JSON.stringify(onboardingData.excludedPersonas || [])}
+- Taille ESN: ${onboardingData.size || 'Non renseignée'}
+- Style: ${onboardingData.style || 'direct'}
+${userContext ? `\nContexte utilisateur: ${userContext}` : ''}
 
-══════════════════════════════════════
-PROFIL DE L'ESN UTILISATRICE
-══════════════════════════════════════
-- Nom : ${onboardingData.esnName || 'Non renseigné'}
-- Taille : ${onboardingData.size || 'Non renseignée'}
-- Offres principales : ${JSON.stringify(onboardingData.offers || [])}
-- Secteurs cibles : ${JSON.stringify(onboardingData.sectors || [])}
-- Personas cibles : ${JSON.stringify(onboardingData.personas || [])}
-- Type de clients visés : ${JSON.stringify(onboardingData.clientType || [])}
-- Zone géographique : ${JSON.stringify(onboardingData.geo || [])}
-- TJM moyen : ${onboardingData.avgTJM || 'Non renseigné'}
-- Cycle de vente : ${onboardingData.salesCycle || 'Non renseigné'}
-- Taille équipe commerciale : ${onboardingData.salesTeamSize || 'Non renseigné'}
-- Défi principal : ${onboardingData.mainChallenge || 'Non renseigné'}
-- Références existantes : ${JSON.stringify(onboardingData.existingRefs || [])}
-- Style commercial : ${onboardingData.style || 'direct'}
-- Personas à exclure : ${JSON.stringify(onboardingData.excludedPersonas || [])}
-${userContext ? `\nCONTEXTE SPÉCIFIQUE DE L'UTILISATEUR : ${userContext}` : ''}
-
-══════════════════════════════════════
-INTELLIGENCE UTILISATEUR — RÈGLES D'ADAPTATION
-══════════════════════════════════════
-
-RÈGLE 1 — Adapter la stratégie selon la TAILLE DE L'ESN :
-- "1 - 20 consultants" → L'ESN est petite. Prioriser les approches directes, les relations interpersonnelles, les portes d'entrée opérationnelles (tech leads, chefs de projet). Éviter de recommander des stratégies qui nécessitent une force de frappe commerciale importante. Proposer des actions réalistes pour 1 personne.
-- "20 - 50 consultants" → ESN en croissance. Peut adresser des ETI et certains grands comptes. Recommander un mix bottom-up + ciblage sélectif des décideurs.
-- "50 - 200 consultants" → ESN structurée. Peut adresser les grands comptes avec une approche multi-thread (plusieurs contacts en parallèle).
-- "200+ consultants" → Grande ESN. Approche institutionnelle possible. Recommander des stratégies de référencement, de réponse aux AO, et d'account-based marketing.
-
-RÈGLE 2 — Adapter selon le TYPE DE CLIENT VISÉ :
-- "Grands comptes (CAC40, SBF120)" → Vérifier systématiquement le statut de référencement. Si l'ESN est petite (< 50) et non référencée, recommander en priorité : sous-traitance via ESN référencée, approche par filiale/BU secondaire, ou entrée par un projet spécifique avec sponsorship interne. Ne JAMAIS recommander un contact DSI direct pour une petite ESN non référencée sur un grand compte.
-- "ETI (500 - 5000 salariés)" → Cycle plus court, moins de barrières. Approche directe au DSI/CTO réaliste. Recommander de chercher des projets de transformation en cours.
-- "PME (< 500 salariés)" → Contact direct fondateur/CTO. Cycle court. Proposer un positionnement expert technique plutôt qu'institutionnel.
-
-RÈGLE 3 — Adapter selon le DÉFI PRINCIPAL :
-- "Identifier de nouveaux comptes" → Mettre l'accent sur les signaux business et les opportunités détectées. Scorer l'attractivité du compte.
-- "Trouver les bons interlocuteurs" → Mettre l'accent sur la cartographie décisionnelle et les chemins d'accès. Détailler la hiérarchie et les rôles.
-- "Rédiger des messages qui convertissent" → Mettre l'accent sur les messages ultra-personnalisés. Produire des messages longs et argumentés, pas des templates génériques.
-- "Structurer mon approche plan de compte" → Mettre l'accent sur le plan d'action semaine par semaine. Détailler les KPIs et les milestones.
-
-RÈGLE 4 — Adapter selon le CYCLE DE VENTE :
-- "Moins de 3 mois" → Plan d'action sur 4 semaines, actions rapides, objectif RDV en semaine 1-2.
-- "3 à 6 mois" → Plan sur 8 semaines, relances structurées, qualification progressive.
-- "6 à 12 mois" → Plan sur 12 semaines, approche multi-contacts, nurturing.
-- "Plus de 12 mois" → Plan trimestriel, veille continue, événements sectoriels.
-
-RÈGLE 5 — Adapter selon le TJM :
-- "Moins de 400€" → Positionner sur le volume et la flexibilité. Cibler les chefs de projet et opérationnels plutôt que les DSI.
-- "400€ - 600€" → Positionnement standard. Équilibre volume/expertise.
-- "600€ - 900€" → Positionner sur l'expertise et la valeur ajoutée. Cibler les décideurs.
-- "900€+" → Positionner sur le conseil stratégique et la transformation. Cibler les C-levels exclusivement.
-
-══════════════════════════════════════
-MÉTHODOLOGIE D'ANALYSE
-══════════════════════════════════════
-
-ÉTAPE 1 — DÉTERMINER LE PROFIL DE LA CIBLE
-Avant toute analyse, déterminer :
-- PME / ETI / Grand groupe
-- Public ou privé (si public → vérifier AO obligatoire)
-- Secteur d'activité
-- Dynamisme IT (score 1-5 basé sur les signaux détectés)
-
-ÉTAPE 2 — IDENTIFIER LES ENJEUX ET SIGNAUX
-Analyser les données web pour extraire :
-- Projets de transformation IT en cours ou planifiés
-- Technologies dominantes (stack technique)
-- Recrutements en cours (indicateur de budget et d'urgence)
-- Partenariats technologiques récents
-- Contraintes réglementaires (NIS2, DORA, RGPD, LPM si applicable)
-- Nominations récentes (nouveau DSI, CTO, CDO = fenêtre d'opportunité)
-- Budget IT estimé (% du CA si détectable)
-
-ÉTAPE 3 — SCORER ET PRIORISER
-Calculer un score de priorité (1-10) selon ces critères pondérés :
-| Critère | Poids |
-| Urgence du besoin (projet actif vs futur) | 25% |
-| Accessibilité des décideurs | 20% |
-| Absence/faiblesse de la concurrence ESN | 20% |
-| Alignement avec les offres de l'ESN | 20% |
-| Potentiel CA (taille du chantier estimé) | 15% |
-
-ÉTAPE 4 — IDENTIFIER LES ANGLES D'ATTAQUE
-Pour chaque angle, définir :
-- Le chantier/projet ciblé
-- Le contact d'entrée (opérationnel) → le chemin d'escalade (décideur)
-- La proposition de valeur spécifique (lien avec les offres de l'ESN)
-- Les risques et les objections possibles
-
-ÉTAPE 5 — CONSTRUIRE LE PLAN D'ACTION
-Adapter le plan selon le cycle de vente de l'ESN :
-- Chaque semaine = actions concrètes assignables
-- Chaque action = un verbe + une cible + un canal (email, LinkedIn, téléphone) + responsable suggéré + outil + deadline + KPI
-- Intégrer des points de décision : si réponse → action A, si silence → action B
-- Différencier PME/ETI (actions directes, cycle court) vs grand groupe (référencement, multi-thread)
-- S'appuyer sur la BASE DE CONNAISSANCES ESN (RAG) et l'historique du compte pour ne pas répéter ce qui a déjà été fait
-
-ÉTAPE 6 — ENGAGEMENT DE CROISSANCE
-- Évaluer le potentiel d'engagement : GO / NO GO avec justification
-- Recommandation explicite : prioritaire ou non, selon les réponses au questionnaire (défi principal, cible, ESN en place)
-- Si l'utilisateur a renseigné un service ESN prioritaire, une cible ou un historique, ces éléments doivent apparaître explicitement dans les recommandations
-
-══════════════════════════════════════
-CARTOGRAPHIE DES CONTACTS
-══════════════════════════════════════
-
-Pour chaque contact identifié, classifier selon :
-- SPONSOR : Décideur final, signe le budget. C-level (DSI, CTO, VP).
-- CHAMPION : Porteur du projet en interne, convaincu de la valeur. Souvent N-1 du sponsor.
-- OPERATIONAL : Utilisateur final, tech lead, chef de projet. Point d'entrée le plus accessible.
-- PURCHASING : Direction achats, responsable référencement. Passage obligé pour les grands comptes.
-- INFLUENCER : Expert interne, architecte, RSSI. N'achète pas mais influence le choix.
-- BLOCKER : Personne qui peut bloquer la vente. Souvent l'ESN concurrente en place ou un décideur hostile.
-
-Priorisation des contacts :
-- Priorité 1 : champions et opérationnels accessibles (premier contact)
-- Priorité 2 : sponsors et influenceurs (escalade après validation opérationnelle)
-- Priorité 3 : achats (une fois le besoin qualifié et le sponsor identifié)
-
-Exclure systématiquement les personas définis dans excludedPersonas de l'utilisateur.
-
-══════════════════════════════════════
-MESSAGES COMMERCIAUX
-══════════════════════════════════════
-
-Chaque message doit :
-1. Mentionner un signal ou enjeu SPÉCIFIQUE du compte (pas un message générique)
-2. Faire le lien avec une offre PRÉCISE de l'ESN
-3. Proposer un appel/RDV de 15 min (pas plus)
-4. Être court : email < 150 mots, LinkedIn < 100 mots
-5. Adapter le ton selon le style commercial de l'ESN :
-   - "formal" → Vouvoiement, ton institutionnel
-   - "direct" → Vouvoiement mais ton orienté valeur, droit au but
-   - "challenger" → Vouvoiement avec une question provocante ou un insight
-
-Email de premier contact :
-- Objet : [Signal détecté] + [Offre ESN] (ex: "Migration cloud SocGen — profils certifiés AWS")
-- Corps : 1 phrase d'accroche (signal) + 1 phrase de valeur (offre) + 1 CTA (15 min de call)
-
-Message LinkedIn :
-- Max 300 caractères
-- Personnalisé au profil du contact (son poste, pas juste l'entreprise)
-- Pas de "Je me permets de..." → direct
-
-Message de relance (J+5) :
-- Référencer le premier message
-- Ajouter un élément de valeur (référence client, insight sectoriel)
-- Nouveau CTA
-
-══════════════════════════════════════
-ANTI-HALLUCINATION — RÈGLES ABSOLUES
-══════════════════════════════════════
-
-- Chaque donnée produite est associée à sa source dans les données fournies.
-- Si une information n'est PAS dans les données web fournies → "Non détecté".
-- Ne cite JAMAIS un chiffre CA, budget IT ou TJM sans l'avoir trouvé dans les données.
-- Les contacts sont des profils RÉALISTES basés sur les données web. Indique qu'ils sont "profils types suggérés" si pas de vrais noms trouvés dans les données.
-- Si les données sont insuffisantes pour une section → l'indiquer clairement et proposer des actions de recherche manuelle.
-- DISTINGUE systématiquement :
-  • Fait vérifié → donnée trouvée dans les sources web
-  • Signal faible → déduit d'une offre d'emploi ou d'un article indirect → préfixé par "Signal :"
-  • Inconnu → "Non détecté — recherche manuelle recommandée"
-
-══════════════════════════════════════
-FORMAT DE SORTIE — JSON STRICT
-══════════════════════════════════════
-
-Réponds UNIQUEMENT en JSON valide. Pas de texte avant/après. Pas de backticks markdown.
-Tous les textes en français.
-
-RÈGLES SUR LE NOM DE L'ENTREPRISE (affichage uniquement — ne jamais faire échouer l'analyse) :
-- Si le nom contient une faute d'orthographe, corrige-le silencieusement et mets le nom corrigé dans "companyNameCorrected".
-- Si le nom est ambigu, choisis la plus grande/connue et indique-la dans "companyNameCorrected".
-- Tu dois TOUJOURS retourner un JSON complet et valide. Même si le nom est mal orthographié ou peu reconnu, produis une analyse "best effort" avec les données disponibles.
-- "notFound": true uniquement si vraiment aucune entreprise ne correspond ; dans ce cas mets "suggestions": [2-3 noms proches] et remplis quand même sector, contacts, angles, actionPlan avec des valeurs plausibles (ex. secteur "Non identifié", contacts types). Ne laisse jamais de champs vides qui feraient échouer le parsing.`
+Règles:
+- Utilise les sources web fournies. Si non trouvé: "Non détecté".
+- Contacts = profils types réalistes (noms fictifs), avec messages courts et personnalisés (enjeu spécifique).
+- Exclure stagiaires/alternants et personas exclus.
+- Garder la réponse compacte pour éviter les timeouts.`
 
   const userPrompt = `Analyse le compte "${companyName}".
 ${ragContext ? `\nBASE DE CONNAISSANCES ESN (à utiliser pour adapter le plan et éviter de répéter ce qui a déjà été fait) :\n${ragContext}\n` : ''}
 
 DONNÉES WEB (Brave Search) — utilise TOUS les résultats pour sourcer tes réponses :
-${JSON.stringify(braveResults.results?.slice(0, 10), null, 2)}
+${JSON.stringify(braveResults.results?.slice(0, 6), null, 2)}
 
 CONTENU SCRAPÉ (Firecrawl) — utilise l'intégralité pour extraire noms de programmes/projets, filiales, BU, signaux :
-${scrapedContent.slice(0, 12000)}
+${scrapedContent.slice(0, 6000)}
 
 Produis une analyse EXHAUSTIVE. Je veux :
 - TOUTES les filiales et BU identifiées (pas juste le groupe)
@@ -609,7 +441,7 @@ Produis une analyse EXHAUSTIVE. Je veux :
 - Les technologies dominantes détectées
 
 INSTRUCTIONS OBLIGATOIRES :
-1. Génère 15 à 20 contacts variés couvrant tous les niveaux (DSI, managers, opérationnels, achats, sécurité). Chaque contact avec email, message LinkedIn et relance personnalisés mentionnant un enjeu SPÉCIFIQUE du compte.
+1. Génère 10 à 15 contacts variés couvrant tous les niveaux (DSI, managers, opérationnels, achats, sécurité). Chaque contact avec email, message LinkedIn et relance personnalisés mentionnant un enjeu SPÉCIFIQUE du compte.
 2. Toutes les données scrapées doivent apparaître dans le rendu. Extraire et afficher explicitement les noms de programmes et de projets détectés (champ programNames).
 3. Cartographie exhaustive : lister TOUTES les entités du groupe (filiales, BU, start-ups internes), pas seulement le groupe global (champ entitiesExhaustive).
 4. Le plan d'actions doit être construit sur la base du questionnaire onboarding et de la mémoire RAG. Si ESN prioritaire, cible ou historique sont renseignés, ils doivent apparaître dans les recommandations.
@@ -688,68 +520,86 @@ Produis un JSON avec EXACTEMENT la structure suivante (tous les champs sont requ
 }
 
 Génère :
-- 15 à 20 contacts variés (DSI, managers, chefs de projet, achats, data, cloud, sécurité) avec messages personnalisés
+- 10 à 15 contacts variés avec messages personnalisés
 - 5-7 angles d'attaque classés par score de priorité
 - Un plan d'action de 4 à 6 semaines (adapté au cycle de vente de l'ESN)`
 
   try {
-    console.log(JSON.stringify({
-      event: 'claude_prompt_meta',
-      traceId,
-      model: 'claude-sonnet-4-20250514',
-      systemChars: systemPrompt.length,
-      userChars: userPrompt.length,
-      apiKeyLen: ANTHROPIC_API_KEY.length,
-    }))
-
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 12000,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }],
-      }),
-      signal: AbortSignal.timeout(120000),
-    })
-
-    console.log(JSON.stringify({
-      event: 'claude_http',
-      traceId,
-      status: res.status,
-      ok: res.ok,
-    }))
-
-    if (!res.ok) {
-      const errBody = await res.text()
-      console.error(JSON.stringify({
-        event: 'claude_api_error',
+    const callClaude = async (mode: 'primary' | 'retry_compact', payload: { system: string; user: string; maxTokens: number; timeoutMs: number }) => {
+      console.log(JSON.stringify({
+        event: 'claude_prompt_meta',
         traceId,
-        status: res.status,
-        statusText: res.statusText,
-        body: errBody.slice(0, 500),
+        mode,
+        model: 'claude-sonnet-4-20250514',
+        systemChars: payload.system.length,
+        userChars: payload.user.length,
+        apiKeyLen: ANTHROPIC_API_KEY.length,
+        max_tokens: payload.maxTokens,
+        timeoutMs: payload.timeoutMs,
       }))
-      return generateFallbackAnalysis(companyName, onboardingData)
+
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: payload.maxTokens,
+          system: payload.system,
+          messages: [{ role: 'user', content: payload.user }],
+        }),
+        signal: AbortSignal.timeout(payload.timeoutMs),
+      })
+
+      console.log(JSON.stringify({ event: 'claude_http', traceId, mode, status: res.status, ok: res.ok }))
+
+      const rawBody = await res.text()
+      console.log(JSON.stringify({ event: 'claude_body_preview', traceId, mode, preview: rawBody.slice(0, 200) }))
+
+      if (!res.ok) {
+        console.error(JSON.stringify({
+          event: 'claude_api_error',
+          traceId,
+          mode,
+          status: res.status,
+          statusText: res.statusText,
+          body: rawBody.slice(0, 500),
+        }))
+        throw new Error(`Claude HTTP ${res.status}`)
+      }
+
+      let data: any
+      try {
+        data = JSON.parse(rawBody)
+      } catch (jsonErr) {
+        console.error(JSON.stringify({
+          event: 'claude_json_parse_error',
+          traceId,
+          mode,
+          bodyFirst500: rawBody.slice(0, 500),
+          error: jsonErr instanceof Error ? jsonErr.message : 'unknown',
+        }))
+        throw new Error('Claude body not JSON')
+      }
+      return data
     }
 
-    const rawBody = await res.text()
-    console.log(JSON.stringify({ event: 'claude_body_preview', traceId, preview: rawBody.slice(0, 200) }))
     let data: any
     try {
-      data = JSON.parse(rawBody)
-    } catch (jsonErr) {
-      console.error(JSON.stringify({
-        event: 'claude_json_parse_error',
-        traceId,
-        bodyFirst500: rawBody.slice(0, 500),
-        error: jsonErr instanceof Error ? jsonErr.message : 'unknown',
-      }))
-      return generateFallbackAnalysis(companyName, onboardingData)
+      data = await callClaude('primary', { system: systemPrompt, user: userPrompt, maxTokens: 6000, timeoutMs: 60000 })
+    } catch (primaryErr) {
+      console.error(JSON.stringify({ event: 'claude_primary_failed', traceId, error: primaryErr instanceof Error ? primaryErr.message : 'unknown' }))
+      // Retry ultra-compact (moins de contexte + moins d'output)
+      const retryUserPrompt = `Analyse le compte "${companyName}".\n\nSOURCES (Brave):\n${JSON.stringify(braveResults.results?.slice(0, 3), null, 2)}\n\nSCRAP (Firecrawl extrait):\n${scrapedContent.slice(0, 3000)}\n\nRetourne le JSON attendu. Génère 10 contacts maximum.`
+      try {
+        data = await callClaude('retry_compact', { system: systemPrompt, user: retryUserPrompt, maxTokens: 3500, timeoutMs: 45000 })
+      } catch (retryErr) {
+        console.error(JSON.stringify({ event: 'claude_retry_failed', traceId, error: retryErr instanceof Error ? retryErr.message : 'unknown' }))
+        return generateFallbackAnalysis(companyName, onboardingData)
+      }
     }
     const text = data.content?.[0]?.text || '{}'
     console.log(JSON.stringify({ event: 'claude_raw_response', traceId, textLength: text.length, textPreview: text.slice(0, 200) }))
