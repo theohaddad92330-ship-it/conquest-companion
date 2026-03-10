@@ -9,6 +9,19 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
 const GOOGLE_NOT_CONFIGURED_MSG = "La connexion Google n'est pas encore disponible. Utilisez votre email.";
+const AUTH_TIMEOUT_MS = 15000;
+
+async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let t: number | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    t = window.setTimeout(() => reject(new Error(`${label} (timeout ${ms}ms)`)), ms);
+  });
+  try {
+    return await Promise.race([p, timeout]);
+  } finally {
+    if (t) window.clearTimeout(t);
+  }
+}
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -28,16 +41,24 @@ export default function Login() {
     hasRedirected.current = true;
     let cancelled = false;
     (async () => {
-      const { data } = await supabase
-        .from("profiles")
-        .select("onboarding_completed")
-        .eq("user_id", user.id)
-        .maybeSingle();
-      if (cancelled) return;
-      if (data?.onboarding_completed === true) {
+      try {
+        const { data } = await withTimeout(
+          supabase
+            .from("profiles")
+            .select("onboarding_completed")
+            .eq("user_id", user.id)
+            .maybeSingle(),
+          AUTH_TIMEOUT_MS,
+          "Chargement du profil"
+        );
+        if (cancelled) return;
+        if (data?.onboarding_completed === true) navigate("/dashboard", { replace: true });
+        else navigate("/welcome", { replace: true });
+      } catch (err) {
+        if (cancelled) return;
+        console.error("[login] profile fetch failed", err);
+        // Ne pas bloquer l'utilisateur si la table profiles/RLS pose problème
         navigate("/dashboard", { replace: true });
-      } else {
-        navigate("/welcome", { replace: true });
       }
     })();
     return () => { cancelled = true; };
@@ -50,13 +71,23 @@ export default function Login() {
       return;
     }
     setLoading(true);
-    const { error } = await signIn(email, password);
-    setLoading(false);
-    if (error) {
-      const msg = (error as Error).message?.includes("Invalid login")
-        ? "Email ou mot de passe incorrect."
-        : (error as Error).message || "Une erreur est survenue.";
-      toast({ title: "Erreur de connexion", description: msg, variant: "destructive" });
+    try {
+      const { error } = await withTimeout(signIn(email, password), AUTH_TIMEOUT_MS, "Connexion");
+      if (error) {
+        const msg = (error as Error).message?.includes("Invalid login")
+          ? "Email ou mot de passe incorrect."
+          : (error as Error).message || "Une erreur est survenue.";
+        toast({ title: "Erreur de connexion", description: msg, variant: "destructive" });
+      }
+    } catch (err) {
+      console.error("[login] signIn failed", err);
+      toast({
+        title: "Connexion impossible",
+        description: err instanceof Error ? err.message : "Une erreur réseau est survenue.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
     }
     // La redirection est gérée par le useEffect qui réagit à user
   };
