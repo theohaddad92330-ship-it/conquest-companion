@@ -693,6 +693,15 @@ Génère :
 - Un plan d'action de 4 à 6 semaines (adapté au cycle de vente de l'ESN)`
 
   try {
+    console.log(JSON.stringify({
+      event: 'claude_prompt_meta',
+      traceId,
+      model: 'claude-sonnet-4-20250514',
+      systemChars: systemPrompt.length,
+      userChars: userPrompt.length,
+      apiKeyLen: ANTHROPIC_API_KEY.length,
+    }))
+
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -709,8 +718,41 @@ Génère :
       signal: AbortSignal.timeout(120000),
     })
 
-    const data = await res.json()
+    console.log(JSON.stringify({
+      event: 'claude_http',
+      traceId,
+      status: res.status,
+      ok: res.ok,
+    }))
+
+    if (!res.ok) {
+      const errBody = await res.text()
+      console.error(JSON.stringify({
+        event: 'claude_api_error',
+        traceId,
+        status: res.status,
+        statusText: res.statusText,
+        body: errBody.slice(0, 500),
+      }))
+      return generateFallbackAnalysis(companyName, onboardingData)
+    }
+
+    const rawBody = await res.text()
+    console.log(JSON.stringify({ event: 'claude_body_preview', traceId, preview: rawBody.slice(0, 200) }))
+    let data: any
+    try {
+      data = JSON.parse(rawBody)
+    } catch (jsonErr) {
+      console.error(JSON.stringify({
+        event: 'claude_json_parse_error',
+        traceId,
+        bodyFirst500: rawBody.slice(0, 500),
+        error: jsonErr instanceof Error ? jsonErr.message : 'unknown',
+      }))
+      return generateFallbackAnalysis(companyName, onboardingData)
+    }
     const text = data.content?.[0]?.text || '{}'
+    console.log(JSON.stringify({ event: 'claude_raw_response', traceId, textLength: text.length, textPreview: text.slice(0, 200) }))
     const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
 
     let parsed: any
