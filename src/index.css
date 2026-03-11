@@ -153,16 +153,16 @@
   }
   .card-hover:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 25px -8px hsl(239 84% 67% / 0.15);
+    box-shadow: 0 4px 12px hsl(0 0% 0% / 0.06);
   }
 
-  /* Table row hover glow */
+  /* Table row hover (neutre) */
   .row-hover {
     transition: background-color 0.15s ease, box-shadow 0.15s ease;
   }
   .row-hover:hover {
-    background-color: hsl(239 84% 67% / 0.04) !important;
-    box-shadow: inset 3px 0 0 hsl(239 84% 67% / 0.5);
+    background-color: hsl(var(--muted) / 0.5) !important;
+    box-shadow: inset 3px 0 0 hsl(var(--border));
   }
 
   /* Badge pulse on high score */
@@ -183,54 +183,44 @@
     transition: transform 0.1s ease;
   }
 
-  /* Sidebar link hover indicator */
+  /* Sidebar link hover indicator (neutre) */
   .nav-glow:hover {
-    box-shadow: inset 3px 0 0 hsl(239 84% 67% / 0.4);
+    box-shadow: inset 3px 0 0 hsl(var(--border));
   }
 
-  /* Premium card: soft gradient border + rounded */
-  .card-premium {
+  /* Cartes neutres : fond card, bordure discrète, pas de violet */
+  .card-neutral {
     border-radius: 0.75rem;
-    background: linear-gradient(135deg, hsl(var(--card) / 0.98) 0%, hsl(var(--card)) 100%);
     border: 1px solid hsl(var(--border));
-    box-shadow: 0 1px 3px hsl(239 84% 67% / 0.06);
-  }
-  .card-premium:hover {
-    box-shadow: 0 4px 12px hsl(239 84% 67% / 0.08);
+    background: hsl(var(--card));
+    box-shadow: 0 1px 2px hsl(0 0% 0% / 0.03);
   }
 
-  /* Card avec accent primary (sections importantes) */
-  .card-accent {
-    border-radius: 0.75rem;
-    background: linear-gradient(135deg, hsl(239 84% 67% / 0.08) 0%, hsl(239 84% 67% / 0.02) 100%);
-    border: 1px solid hsl(239 84% 67% / 0.2);
-    box-shadow: 0 2px 8px hsl(239 84% 67% / 0.06);
-  }
-
-  /* Tableau premium: conteneur arrondi, lignes espacées */
+  /* Tableau : conteneur arrondi, hover neutre (gris) */
   .table-premium-wrapper {
     border-radius: 0.75rem;
     overflow: hidden;
     border: 1px solid hsl(var(--border));
     background: hsl(var(--card));
-    box-shadow: 0 1px 3px hsl(0 0% 0% / 0.04);
+    box-shadow: 0 1px 2px hsl(0 0% 0% / 0.03);
   }
   .table-premium-wrapper .table-row-hover:hover {
-    background: hsl(239 84% 67% / 0.05);
-    box-shadow: inset 4px 0 0 hsl(239 84% 67% / 0.5);
+    background: hsl(var(--muted) / 0.6);
+    box-shadow: inset 3px 0 0 hsl(var(--border));
   }
 
-  /* Zone header compte: léger dégradé */
+  /* Header compte : transparence légère neutre (pas de violet) */
   .header-premium {
-    background: linear-gradient(180deg, hsl(239 84% 67% / 0.06) 0%, transparent 100%);
+    background: linear-gradient(180deg, hsl(var(--muted) / 0.4) 0%, transparent 100%);
     border-radius: 0.75rem;
     padding: 1.25rem 1.5rem;
   }
 
-  /* Onglets style pill / premium */
+  /* Onglet actif : fond neutre (muted), pas de bandeau violet */
   .tabs-premium [data-state="active"] {
     border-radius: 0.5rem;
-    background: linear-gradient(135deg, hsl(239 84% 67% / 0.15) 0%, hsl(239 84% 67% / 0.06) 100%);
-    box-shadow: 0 1px 2px hsl(239 84% 67% / 0.1);
+    background: hsl(var(--muted) / 0.8);
+    color: hsl(var(--foreground));
+    box-shadow: none;
   }
 }

@@ -54,8 +54,8 @@ export function AppSidebar() {
     <Sidebar collapsible="icon" className="border-r border-border">
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary shadow-sm ring-1 ring-primary/20">
-            <Zap className="h-4 w-4 text-primary-foreground" />
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-muted">
+            <Zap className="h-4 w-4 text-muted-foreground" />
           </div>
           {!collapsed && (
             <span className="text-base font-display font-bold tracking-tight text-foreground">
@@ -87,7 +87,7 @@ export function AppSidebar() {
               {mainNav.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild>
-                    <NavLink to={item.url} end className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-all duration-200 hover:bg-accent/10 hover:text-foreground nav-glow" activeClassName="bg-primary/10 text-primary font-medium border-l-[3px] border-primary">
+                    <NavLink to={item.url} end className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-all duration-200 hover:bg-accent/10 hover:text-foreground nav-glow" activeClassName="bg-muted/80 text-foreground font-medium border-l-[3px] border-foreground/30">
                       <item.icon className="h-4 w-4 shrink-0" />
                       {!collapsed && <span>{item.title}</span>}
                     </NavLink>
@@ -106,7 +106,7 @@ export function AppSidebar() {
               {settingsNav.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild>
-                    <NavLink to={item.url} end className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-all duration-200 hover:bg-accent/10 hover:text-foreground nav-glow" activeClassName="bg-primary/10 text-primary font-medium border-l-[3px] border-primary">
+                    <NavLink to={item.url} end className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-all duration-200 hover:bg-accent/10 hover:text-foreground nav-glow" activeClassName="bg-muted/80 text-foreground font-medium border-l-[3px] border-foreground/30">
                       <item.icon className="h-4 w-4 shrink-0" />
                       {!collapsed && <span>{item.title}</span>}
                     </NavLink>
@@ -123,7 +123,7 @@ export function AppSidebar() {
           {bottomNav.map((item) => (
             <SidebarMenuItem key={item.title}>
               <SidebarMenuButton asChild>
-                <NavLink to={item.url} end className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/10 hover:text-foreground" activeClassName="bg-primary/10 text-primary font-medium">
+                <NavLink to={item.url} end className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/10 hover:text-foreground" activeClassName="bg-muted/80 text-foreground font-medium">
                   <item.icon className="h-4 w-4 shrink-0" />
                   {!collapsed && <span>{item.title}</span>}
                 </NavLink>
@@ -141,8 +141,8 @@ export function AppSidebar() {
         {/* User info */}
         {!collapsed && displayName && (
           <div className="rounded-lg border border-border bg-card px-3 py-2.5 flex items-center gap-2.5">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10">
-              <span className="text-[10px] font-semibold text-primary">{initials}</span>
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted">
+              <span className="text-[10px] font-semibold text-muted-foreground">{initials}</span>
             </div>
             <div className="min-w-0">
               <p className="text-xs font-medium truncate">{displayName}</p>
@@ -156,7 +156,7 @@ export function AppSidebar() {
           <div className="rounded-lg border border-border bg-card px-3 py-2.5 space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5">
-                <Coins className="h-3.5 w-3.5 text-primary" />
+                <Coins className="h-3.5 w-3.5 text-muted-foreground" />
                 <span className="text-xs text-muted-foreground">Crédits</span>
               </div>
               <span className="text-xs font-mono font-semibold text-foreground">

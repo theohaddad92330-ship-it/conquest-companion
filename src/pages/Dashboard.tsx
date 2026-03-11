@@ -217,7 +217,7 @@ export default function Dashboard() {
             <h1 className="font-display text-2xl font-bold">Bonjour{firstName ? ` ${firstName}` : ""} 👋</h1>
             <p className="text-sm text-foreground/50 mt-1">Voici un résumé de votre activité commerciale</p>
           </div>
-          <Badge variant="secondary" className="gap-1.5 px-3 py-1.5 border border-primary/20 bg-primary/5 text-primary text-xs font-medium">
+          <Badge variant="secondary" className="gap-1.5 px-3 py-1.5 border border-border bg-muted text-muted-foreground text-xs font-medium">
             <Sparkles className="h-3 w-3" />
             Plan {(userCredits?.plan ?? "starter").toLowerCase()}
           </Badge>
@@ -225,7 +225,7 @@ export default function Dashboard() {
 
         {/* Search bar */}
         <motion.div variants={fadeUp} className="mb-8">
-          <Card className="border-border bg-card overflow-hidden card-premium rounded-xl">
+          <Card className="border-border bg-card overflow-hidden card-neutral rounded-xl">
             <CardContent className="p-5">
               <div className="relative flex items-center gap-2">
                 <div className="relative flex-1">
@@ -250,12 +250,12 @@ export default function Dashboard() {
         {/* KPIs */}
         <motion.div variants={fadeUp} className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           {kpis.map((kpi) => (
-            <Card key={kpi.label} className="border-border card-hover card-premium rounded-xl group">
+            <Card key={kpi.label} className="border-border card-hover card-neutral rounded-xl group">
             <CardContent className="p-5 space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-muted-foreground">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 group-hover:bg-primary/15 transition-colors">
-                      <kpi.icon className="h-4 w-4 text-primary" />
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted group-hover:bg-muted/80 transition-colors">
+                      <kpi.icon className="h-4 w-4 text-muted-foreground" />
                     </div>
                   </div>
                 </div>
@@ -274,10 +274,10 @@ export default function Dashboard() {
 
         {/* Credits card */}
         <motion.div variants={fadeUp} className="mb-6">
-          <Card className="border-border bg-gradient-to-r from-primary/5 to-transparent card-accent rounded-xl">
+          <Card className="border-border card-neutral rounded-xl">
             <CardContent className="p-6 flex items-center gap-6">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-                <Coins className="h-6 w-6 text-primary" />
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted">
+                <Coins className="h-6 w-6 text-muted-foreground" />
               </div>
               <div className="flex-1">
                 <div className="flex items-center justify-between mb-2">
@@ -301,7 +301,7 @@ export default function Dashboard() {
         {hasAccounts && (
           <motion.div variants={fadeUp} className="grid md:grid-cols-2 gap-4 mb-6">
             {/* Activity trend */}
-            <Card className="border-border card-premium rounded-xl">
+            <Card className="border-border card-neutral rounded-xl">
               <CardContent className="p-6">
                 <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
                   <TrendingUp className="h-4 w-4 text-primary" />
@@ -330,7 +330,7 @@ export default function Dashboard() {
             </Card>
 
             {/* Weekly activity */}
-            <Card className="border-border card-premium rounded-xl">
+            <Card className="border-border card-neutral rounded-xl">
               <CardContent className="p-6">
                 <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
                   <BarChart3 className="h-4 w-4 text-primary" />
@@ -414,7 +414,7 @@ export default function Dashboard() {
         {/* Bottom charts */}
         {hasAccounts && (
           <motion.div variants={fadeUp} className="grid md:grid-cols-2 gap-4 mt-6">
-            <Card className="border-border card-premium rounded-xl">
+            <Card className="border-border card-neutral rounded-xl">
               <CardContent className="p-6">
                 <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
                   <Target className="h-4 w-4 text-primary" />
@@ -436,7 +436,7 @@ export default function Dashboard() {
               </CardContent>
             </Card>
 
-            <Card className="border-border card-premium rounded-xl">
+            <Card className="border-border card-neutral rounded-xl">
               <CardContent className="p-6">
                 <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
                   <BarChart3 className="h-4 w-4 text-primary" />
