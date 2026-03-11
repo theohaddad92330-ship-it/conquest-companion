@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { AccountAnalysis } from "@/types/account";
+import { safeString } from "@/lib/utils";
 
 interface AccountCardProps {
   account: AccountAnalysis | null;
@@ -90,9 +91,9 @@ export function AccountCard({ account, isLoading }: AccountCardProps) {
             <motion.div variants={fadeIn} transition={{ delay: 0.2 }} className="space-y-2.5">
               <SectionTitle icon={GitBranch} title="Filiales pertinentes" />
               <div className="flex flex-wrap gap-1.5">
-                {account.subsidiaries.map((s) => (
-                  <Badge key={s} variant="secondary" className="text-xs font-normal">
-                    {s}
+                {(account.subsidiaries || []).map((s, i) => (
+                  <Badge key={i} variant="secondary" className="text-xs font-normal">
+                    {safeString(s)}
                   </Badge>
                 ))}
               </div>
@@ -103,10 +104,10 @@ export function AccountCard({ account, isLoading }: AccountCardProps) {
           <motion.div variants={fadeIn} transition={{ delay: 0.3 }} className="space-y-2.5">
             <SectionTitle icon={AlertTriangle} title="Enjeux IT identifiés" />
             <ul className="space-y-1.5">
-              {(account.it_challenges || []).map((c) => (
-                <li key={c} className="flex items-start gap-2 text-sm text-foreground">
+              {(account.it_challenges || []).map((c: unknown, i: number) => (
+                <li key={i} className="flex items-start gap-2 text-sm text-foreground">
                   <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-                  {c}
+                  {safeString(c)}
                 </li>
               ))}
             </ul>
@@ -116,12 +117,15 @@ export function AccountCard({ account, isLoading }: AccountCardProps) {
           <motion.div variants={fadeIn} transition={{ delay: 0.4 }} className="space-y-2.5">
             <SectionTitle icon={TrendingUp} title="Signaux récents" />
             <ul className="space-y-1.5">
-              {(account.recent_signals || []).map((s) => (
-                <li key={s} className="flex items-start gap-2 text-sm text-foreground">
-                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-bellum-success" />
-                  {s}
-                </li>
-              ))}
+              {(account.recent_signals || []).map((s: string | { signal?: string }, i: number) => {
+                const label = typeof s === "string" ? s : (s && typeof s === "object" && "signal" in s ? (s as { signal?: string }).signal : String(s ?? ""));
+                return (
+                  <li key={i} className="flex items-start gap-2 text-sm text-foreground">
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-bellum-success" />
+                    {label || "—"}
+                  </li>
+                );
+              })}
             </ul>
           </motion.div>
 
@@ -134,7 +138,7 @@ export function AccountCard({ account, isLoading }: AccountCardProps) {
             <p className="text-xs font-medium uppercase tracking-wider text-primary mb-1.5">
               Justification du score
             </p>
-            <p className="text-sm text-foreground/80">{account.priority_justification || "—"}</p>
+            <p className="text-sm text-foreground/80">{typeof account.priority_justification === "string" ? account.priority_justification : (account.priority_justification as { overall?: string } | null)?.overall ?? "—"}</p>
           </motion.div>
         </CardContent>
       </Card>

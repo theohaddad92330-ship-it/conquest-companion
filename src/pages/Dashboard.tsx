@@ -85,7 +85,7 @@ export default function Dashboard() {
       const contacts = accounts.reduce((sum: number, a: any) => {
         const d = new Date(a.created_at);
         if (d >= start && d < end) {
-          return sum + (a.raw_analysis?.contacts?.length || 0);
+          return sum + (Array.isArray(a.raw_analysis?.contacts) ? a.raw_analysis.contacts.length : 0);
         }
         return sum;
       }, 0);
@@ -136,7 +136,7 @@ export default function Dashboard() {
       { label: "Comptes analysés", value: String(accounts.length), sub: "au total", icon: BarChart3, trend: "", trendUp: true },
       {
         label: "Contacts identifiés",
-        value: String(accounts.reduce((sum: number, a: any) => sum + (a.raw_analysis?.contacts?.length || 0), 0)),
+        value: String(accounts.reduce((sum: number, a: any) => sum + (Array.isArray(a.raw_analysis?.contacts) ? a.raw_analysis.contacts.length : 0), 0)),
         sub: "au total",
         icon: Users,
         trend: "",
@@ -148,14 +148,16 @@ export default function Dashboard() {
           accounts.reduce(
             (sum: number, a: any) =>
               sum +
-              (a.raw_analysis?.contacts?.reduce(
-                (acc: number, c: any) =>
-                  acc +
-                  (c.emailMessage ? 1 : 0) +
-                  (c.linkedinMessage ? 1 : 0) +
-                  (c.followupMessage ? 1 : 0),
-                0,
-              ) || 0),
+              (Array.isArray(a.raw_analysis?.contacts)
+                ? a.raw_analysis.contacts.reduce(
+                    (acc: number, c: any) =>
+                      acc +
+                      (c?.emailMessage ? 1 : 0) +
+                      (c?.linkedinMessage ? 1 : 0) +
+                      (c?.followupMessage ? 1 : 0),
+                    0,
+                  )
+                : 0),
             0,
           ),
         ),

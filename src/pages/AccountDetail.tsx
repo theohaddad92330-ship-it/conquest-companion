@@ -21,6 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAccount, useAccountActionPlan, useAccountAngles, useAccountContacts, useCancelAnalysis } from "@/hooks/useAccounts";
 import type { AccountAnalysis, Contact, AttackAngle, ActionPlan } from "@/types/account";
 import { generateCSV, downloadCSV } from "@/lib/export-csv";
+import { safeString } from "@/lib/utils";
 
 const fadeUp = { hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } };
 
@@ -76,7 +77,7 @@ function TabFiche({ account }: { account: AccountAnalysis }) {
           </h3>
           <div className="flex flex-wrap gap-1.5">
             {(account.subsidiaries || []).length > 0 ? (
-              account.subsidiaries.map((s) => <Badge key={s} variant="secondary" className="text-xs">{s}</Badge>)
+              (account.subsidiaries || []).map((s, i) => <Badge key={i} variant="secondary" className="text-xs">{safeString(s)}</Badge>)
             ) : (
               <span className="text-sm text-muted-foreground">—</span>
             )}
@@ -91,8 +92,8 @@ function TabFiche({ account }: { account: AccountAnalysis }) {
               <Target className="h-4 w-4 text-primary" />Programmes et projets détectés
             </h3>
             <ul className="text-sm space-y-1">
-              {account.raw_analysis.programNames.map((name: string, i: number) => (
-                <li key={i} className="flex items-center gap-2"><span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />{name}</li>
+              {(account.raw_analysis?.programNames || []).map((item: unknown, i: number) => (
+                <li key={i} className="flex items-center gap-2"><span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />{safeString(item)}</li>
               ))}
             </ul>
           </CardContent>
@@ -106,11 +107,11 @@ function TabFiche({ account }: { account: AccountAnalysis }) {
               <Building2 className="h-4 w-4 text-primary" />Cartographie des entités
             </h3>
             <div className="space-y-2 text-sm">
-              {account.raw_analysis.entitiesExhaustive.map((e: { name?: string; type?: string; parent?: string }, i: number) => (
+              {(account.raw_analysis?.entitiesExhaustive || []).map((e: unknown, i: number) => (
                 <div key={i} className="flex items-center gap-2 flex-wrap">
-                  <Badge variant="outline" className="text-xs">{e.name || "—"}</Badge>
-                  <span className="text-muted-foreground text-xs">{e.type || ""}</span>
-                  {e.parent && <span className="text-muted-foreground text-xs">← {e.parent}</span>}
+                  <Badge variant="outline" className="text-xs">{safeString((e as { name?: string })?.name)}</Badge>
+                  <span className="text-muted-foreground text-xs">{safeString((e as { type?: string })?.type)}</span>
+                  {(e as { parent?: string })?.parent != null && <span className="text-muted-foreground text-xs">← {safeString((e as { parent?: string }).parent)}</span>}
                 </div>
               ))}
             </div>
@@ -142,12 +143,12 @@ function TabFiche({ account }: { account: AccountAnalysis }) {
             <TrendingUp className="h-4 w-4 text-primary" />🔔 Signaux récents
           </h3>
           <div className="space-y-2">
-            {(account.recent_signals || []).map((s, i) => {
+            {(account.recent_signals || []).map((s: unknown, i: number) => {
               const icons = ["📰", "💼", "📢", "🔄", "📊"];
               return (
                 <div key={i} className="flex items-start gap-2.5 text-sm rounded-md p-2.5 bg-secondary/30 border border-border">
                   <span>{icons[i % icons.length]}</span>
-                  <span>{s}</span>
+                  <span>{safeString(s)}</span>
                 </div>
               );
             })}
@@ -161,7 +162,7 @@ function TabFiche({ account }: { account: AccountAnalysis }) {
       <Card className="border-primary/20 bg-primary/5">
         <CardContent className="p-5">
           <p className="text-xs font-semibold uppercase tracking-wider text-primary mb-1.5">Score de priorité : {account.priority_score}/10</p>
-          <p className="text-sm text-foreground/80">&ldquo;{account.priority_justification || "—"}&rdquo;</p>
+          <p className="text-sm text-foreground/80">&ldquo;{typeof account.priority_justification === "string" ? account.priority_justification : (account.priority_justification as { overall?: string } | null)?.overall ?? "—"}&rdquo;</p>
         </CardContent>
       </Card>
     </div>
@@ -374,7 +375,7 @@ function TabContacts({ contacts, companyName }: { contacts: Contact[]; companyNa
 
 function TabOrganigramme({ account, contacts }: { account: AccountAnalysis; contacts: Contact[] }) {
   const entities = useMemo(() => {
-    const fromRaw = (account.raw_analysis?.entitiesExhaustive || []).map((e: { name?: string; type?: string; parent?: string }) => e.name || "");
+    const fromRaw = (account.raw_analysis?.entitiesExhaustive || []).map((e: unknown) => safeString((e as { name?: string })?.name));
     if (fromRaw.length > 0) return [...new Set(fromRaw)];
     const fromSubs = account.subsidiaries || [];
     const fromContacts = contacts.map((c) => c.entity).filter(Boolean) as string[];
@@ -457,26 +458,28 @@ function TabOrganigramme({ account, contacts }: { account: AccountAnalysis; cont
   );
 }
 
-function TabOuvrirCompte({ raw }: { raw: any }) {
-  const data = raw?.commentOuvrirCompte;
-  if (!data) return <p className="text-sm text-muted-foreground">Aucune donnée disponible. Relancez une analyse pour générer cette section.</p>;
+function TabOuvrirCompte({ raw }: { raw: unknown }) {
+  const data = raw && typeof raw === "object" && "commentOuvrirCompte" in raw ? (raw as { commentOuvrirCompte?: unknown }).commentOuvrirCompte : null;
+  const d = data && typeof data === "object" ? data as { strategy?: unknown; entryPoints?: unknown[] } : null;
+  if (!d) return <p className="text-sm text-muted-foreground">Aucune donnée disponible. Relancez une analyse pour générer cette section.</p>;
+  const entryPoints = Array.isArray(d.entryPoints) ? d.entryPoints : [];
   return (
     <div className="space-y-6">
       <Card className="border-border">
         <CardContent className="p-5 space-y-3">
           <h3 className="font-display text-sm font-semibold">Stratégie d&apos;entrée</h3>
-          <p className="text-sm text-foreground/90 whitespace-pre-line">{data.strategy || "—"}</p>
+          <p className="text-sm text-foreground/90 whitespace-pre-line">{safeString(d.strategy)}</p>
         </CardContent>
       </Card>
-      {(data.entryPoints?.length > 0) && (
+      {entryPoints.length > 0 && (
         <Card className="border-border">
           <CardContent className="p-5 space-y-3">
             <h3 className="font-display text-sm font-semibold">Portes d&apos;entrée recommandées</h3>
             <ul className="space-y-2">
-              {data.entryPoints.map((ep: { label?: string; justification?: string }, i: number) => (
+              {entryPoints.map((ep: unknown, i: number) => (
                 <li key={i} className="flex flex-col gap-1 text-sm">
-                  <span className="font-medium">{ep.label || "—"}</span>
-                  {ep.justification && <span className="text-muted-foreground text-xs">{ep.justification}</span>}
+                  <span className="font-medium">{safeString((ep as { label?: unknown })?.label)}</span>
+                  {(ep as { justification?: unknown })?.justification != null && <span className="text-muted-foreground text-xs">{safeString((ep as { justification?: unknown }).justification)}</span>}
                 </li>
               ))}
             </ul>
@@ -487,77 +490,86 @@ function TabOuvrirCompte({ raw }: { raw: any }) {
   );
 }
 
-function TabOffresConstruire({ raw }: { raw: any }) {
-  const data = raw?.offresAConstruire;
-  if (!data) return <p className="text-sm text-muted-foreground">Aucune donnée disponible. Relancez une analyse pour générer cette section.</p>;
-  const offers = data.offers || [];
-  if (offers.length === 0) return <p className="text-sm text-muted-foreground">Aucune offre recommandée.</p>;
+function TabOffresConstruire({ raw }: { raw: unknown }) {
+  const data = raw && typeof raw === "object" && "offresAConstruire" in raw ? (raw as { offresAConstruire?: unknown }).offresAConstruire : null;
+  const offres = data && typeof data === "object" && "offers" in data ? (data as { offers?: unknown[] }).offers : null;
+  const offers = Array.isArray(offres) ? offres : [];
+  if (offers.length === 0) return <p className="text-sm text-muted-foreground">Aucune donnée disponible ou aucune offre recommandée.</p>;
   return (
     <div className="space-y-4">
       <Card className="border-border">
         <CardContent className="p-5 space-y-4">
           <h3 className="font-display text-sm font-semibold">Offres ESN à proposer</h3>
-          {offers.map((o: { offer?: string; order?: number; interlocutor?: string; pitch?: string }, i: number) => (
-            <div key={i} className="border-b border-border pb-4 last:border-0 last:pb-0">
-              <div className="flex items-center gap-2 text-sm font-medium">#{o.order ?? i + 1} — {o.offer || "—"}</div>
-              {o.interlocutor && <p className="text-xs text-muted-foreground mt-1">Pour : {o.interlocutor}</p>}
-              {o.pitch && <p className="text-sm text-foreground/80 mt-2">{o.pitch}</p>}
-            </div>
-          ))}
+          {offers.map((o: unknown, i: number) => {
+            const obj = o && typeof o === "object" ? o as { order?: number; offer?: unknown; interlocutor?: unknown; pitch?: unknown } : {};
+            return (
+              <div key={i} className="border-b border-border pb-4 last:border-0 last:pb-0">
+                <div className="flex items-center gap-2 text-sm font-medium">#{obj.order ?? i + 1} — {safeString(obj.offer)}</div>
+                {obj.interlocutor != null && <p className="text-xs text-muted-foreground mt-1">Pour : {safeString(obj.interlocutor)}</p>}
+                {obj.pitch != null && <p className="text-sm text-foreground/80 mt-2">{safeString(obj.pitch)}</p>}
+              </div>
+            );
+          })}
         </CardContent>
       </Card>
     </div>
   );
 }
 
-function TabPlanHebdo({ raw }: { raw: any }) {
-  const data = raw?.planHebdomadaire;
-  if (!data) return <p className="text-sm text-muted-foreground">Aucune donnée disponible. Relancez une analyse pour générer cette section.</p>;
-  const weeks = data.weeks || [];
+function TabPlanHebdo({ raw }: { raw: unknown }) {
+  const data = raw && typeof raw === "object" && "planHebdomadaire" in raw ? (raw as { planHebdomadaire?: unknown }).planHebdomadaire : null;
+  const d = data && typeof data === "object" ? data as { methodology?: unknown; weeks?: unknown[] } : null;
+  if (!d) return <p className="text-sm text-muted-foreground">Aucune donnée disponible. Relancez une analyse pour générer cette section.</p>;
+  const weeks = Array.isArray(d.weeks) ? d.weeks : [];
   return (
     <div className="space-y-6">
-      {data.methodology && (
-        <p className="text-xs text-muted-foreground italic">{data.methodology}</p>
+      {d.methodology != null && (
+        <p className="text-xs text-muted-foreground italic">{safeString(d.methodology)}</p>
       )}
-      {weeks.map((w: { week?: number; theme?: string; actions?: string[] }, i: number) => (
-        <Card key={i} className="border-border">
-          <CardContent className="p-5 space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wider text-primary">Semaine {w.week ?? i + 1} — {w.theme ?? "—"}</p>
+      {weeks.map((w: unknown, i: number) => {
+        const obj = w && typeof w === "object" ? w as { week?: number; theme?: unknown; actions?: unknown[] } : {};
+        const actions = Array.isArray(obj.actions) ? obj.actions : [];
+        return (
+          <Card key={i} className="border-border">
+            <CardContent className="p-5 space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-primary">Semaine {obj.week ?? i + 1} — {safeString(obj.theme)}</p>
             <ul className="list-disc list-inside text-sm space-y-1">
-              {(w.actions || []).map((a: string, j: number) => <li key={j}>{a}</li>)}
+              {actions.map((a: unknown, j: number) => <li key={j}>{safeString(a)}</li>)}
             </ul>
           </CardContent>
         </Card>
-      ))}
+        );
+      })}
       {weeks.length === 0 && <p className="text-sm text-muted-foreground">Aucune action hebdomadaire.</p>}
     </div>
   );
 }
 
-function TabEvaluation({ raw }: { raw: any }) {
-  const data = raw?.evaluationCompte;
-  if (!data) return <p className="text-sm text-muted-foreground">Aucune donnée disponible. Relancez une analyse pour générer cette section.</p>;
-  const goNoGo = (data.goNoGo || "").toUpperCase();
+function TabEvaluation({ raw }: { raw: unknown }) {
+  const data = raw && typeof raw === "object" && "evaluationCompte" in raw ? (raw as { evaluationCompte?: unknown }).evaluationCompte : null;
+  const d = data && typeof data === "object" ? data as { goNoGo?: unknown; scoreGlobal?: unknown; justification?: unknown; recommandation?: unknown } : null;
+  if (!d) return <p className="text-sm text-muted-foreground">Aucune donnée disponible. Relancez une analyse pour générer cette section.</p>;
+  const goNoGo = String(safeString(d.goNoGo)).toUpperCase();
   const isGo = goNoGo === "GO";
   return (
     <div className="space-y-6">
       <Card className={`border-2 ${isGo ? "border-bellum-success/50 bg-bellum-success/5" : "border-destructive/30 bg-destructive/5"}`}>
         <CardContent className="p-5 space-y-2">
-          <p className="text-sm font-semibold">Recommandation : <span className={isGo ? "text-bellum-success" : "text-destructive"}>{data.goNoGo || "—"}</span></p>
-          <p className="text-2xl font-bold">Score global : {data.scoreGlobal ?? "—"}/10</p>
+          <p className="text-sm font-semibold">Recommandation : <span className={isGo ? "text-bellum-success" : "text-destructive"}>{safeString(d.goNoGo)}</span></p>
+          <p className="text-2xl font-bold">Score global : {d.scoreGlobal != null ? String(d.scoreGlobal) : "—"}/10</p>
         </CardContent>
       </Card>
       <Card className="border-border">
         <CardContent className="p-5 space-y-3">
           <h3 className="font-display text-sm font-semibold">Justification</h3>
-          <p className="text-sm text-foreground/90 whitespace-pre-line">{data.justification || "—"}</p>
+          <p className="text-sm text-foreground/90 whitespace-pre-line">{safeString(d.justification)}</p>
         </CardContent>
       </Card>
-      {data.recommandation && (
+      {d.recommandation != null && safeString(d.recommandation) !== "—" && (
         <Card className="border-border">
           <CardContent className="p-5">
             <h3 className="font-display text-sm font-semibold mb-2">Recommandation</h3>
-            <p className="text-sm text-foreground/90 whitespace-pre-line">{data.recommandation}</p>
+            <p className="text-sm text-foreground/90 whitespace-pre-line">{safeString(d.recommandation)}</p>
           </CardContent>
         </Card>
       )}
