@@ -212,7 +212,7 @@ export default function Dashboard() {
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       <motion.div initial="hidden" animate="visible" variants={stagger}>
         {/* Header */}
-        <motion.div variants={fadeUp} className="mb-6 flex items-center justify-between">
+        <motion.div variants={fadeUp} className="header-premium mb-6 flex items-center justify-between rounded-xl px-5 py-4">
           <div>
             <h1 className="font-display text-2xl font-bold">Bonjour{firstName ? ` ${firstName}` : ""} 👋</h1>
             <p className="text-sm text-foreground/50 mt-1">Voici un résumé de votre activité commerciale</p>
@@ -225,8 +225,8 @@ export default function Dashboard() {
 
         {/* Search bar */}
         <motion.div variants={fadeUp} className="mb-8">
-          <Card className="border-border bg-card overflow-hidden">
-            <CardContent className="p-4">
+          <Card className="border-border bg-card overflow-hidden card-premium rounded-xl">
+            <CardContent className="p-5">
               <div className="relative flex items-center gap-2">
                 <div className="relative flex-1">
                   <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-muted-foreground" />
@@ -250,8 +250,8 @@ export default function Dashboard() {
         {/* KPIs */}
         <motion.div variants={fadeUp} className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           {kpis.map((kpi) => (
-            <Card key={kpi.label} className="border-border card-hover group">
-            <CardContent className="p-4 space-y-2">
+            <Card key={kpi.label} className="border-border card-hover card-premium rounded-xl group">
+            <CardContent className="p-5 space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 group-hover:bg-primary/15 transition-colors">
@@ -274,8 +274,8 @@ export default function Dashboard() {
 
         {/* Credits card */}
         <motion.div variants={fadeUp} className="mb-6">
-          <Card className="border-border bg-gradient-to-r from-primary/5 to-transparent">
-            <CardContent className="p-5 flex items-center gap-6">
+          <Card className="border-border bg-gradient-to-r from-primary/5 to-transparent card-accent rounded-xl">
+            <CardContent className="p-6 flex items-center gap-6">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
                 <Coins className="h-6 w-6 text-primary" />
               </div>
@@ -301,8 +301,8 @@ export default function Dashboard() {
         {hasAccounts && (
           <motion.div variants={fadeUp} className="grid md:grid-cols-2 gap-4 mb-6">
             {/* Activity trend */}
-            <Card className="border-border">
-              <CardContent className="p-5">
+            <Card className="border-border card-premium rounded-xl">
+              <CardContent className="p-6">
                 <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
                   <TrendingUp className="h-4 w-4 text-primary" />
                   Évolution sur 6 semaines
@@ -330,8 +330,8 @@ export default function Dashboard() {
             </Card>
 
             {/* Weekly activity */}
-            <Card className="border-border">
-              <CardContent className="p-5">
+            <Card className="border-border card-premium rounded-xl">
+              <CardContent className="p-6">
                 <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
                   <BarChart3 className="h-4 w-4 text-primary" />
                   Activité cette semaine
@@ -367,7 +367,7 @@ export default function Dashboard() {
                   Voir tout <ArrowRight className="h-3 w-3 ml-1" />
                 </Button>
               </div>
-              <Card className="border-border">
+              <div className="table-premium-wrapper">
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
@@ -380,7 +380,7 @@ export default function Dashboard() {
                   </TableHeader>
                   <TableBody>
                     {accounts.slice(0, 5).map((a: any) => (
-                      <TableRow key={a.id} className="cursor-pointer row-hover" onClick={() => navigate(`/accounts/${a.id}`)}>
+                      <TableRow key={a.id} className="table-row-hover cursor-pointer" onClick={() => navigate(`/accounts/${a.id}`)}>
                         <TableCell className="font-medium flex items-center gap-2">
                           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-secondary">
                             <Building2 className="h-3.5 w-3.5 text-foreground/60" />
@@ -404,7 +404,7 @@ export default function Dashboard() {
                     ))}
                   </TableBody>
                 </Table>
-              </Card>
+              </div>
             </>
           ) : (
             <EmptyState type="accounts" />
@@ -414,8 +414,8 @@ export default function Dashboard() {
         {/* Bottom charts */}
         {hasAccounts && (
           <motion.div variants={fadeUp} className="grid md:grid-cols-2 gap-4 mt-6">
-            <Card className="border-border">
-              <CardContent className="p-5">
+            <Card className="border-border card-premium rounded-xl">
+              <CardContent className="p-6">
                 <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
                   <Target className="h-4 w-4 text-primary" />
                   Top secteurs
@@ -436,8 +436,8 @@ export default function Dashboard() {
               </CardContent>
             </Card>
 
-            <Card className="border-border">
-              <CardContent className="p-5">
+            <Card className="border-border card-premium rounded-xl">
+              <CardContent className="p-6">
                 <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
                   <BarChart3 className="h-4 w-4 text-primary" />
                   Répartition des scores

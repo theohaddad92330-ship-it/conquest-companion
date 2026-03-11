@@ -58,8 +58,8 @@ function Info({ label, value, isLink }: { label: string; value: string; isLink?:
 function TabFiche({ account }: { account: AccountAnalysis }) {
   return (
     <div className="space-y-6">
-      <Card className="border-border">
-        <CardContent className="p-5 space-y-1">
+      <Card className="border-border card-premium rounded-xl">
+        <CardContent className="p-6 space-y-1">
           <h3 className="font-display text-sm font-semibold flex items-center gap-2 mb-3">
             <Building2 className="h-4 w-4 text-primary" />Informations générales
           </h3>
@@ -71,8 +71,8 @@ function TabFiche({ account }: { account: AccountAnalysis }) {
         </CardContent>
       </Card>
 
-      <Card className="border-border">
-        <CardContent className="p-5 space-y-3">
+      <Card className="border-border card-premium rounded-xl">
+        <CardContent className="p-6 space-y-3">
           <h3 className="font-display text-sm font-semibold flex items-center gap-2">
             <GitBranch className="h-4 w-4 text-primary" />Filiales pertinentes
           </h3>
@@ -87,8 +87,8 @@ function TabFiche({ account }: { account: AccountAnalysis }) {
       </Card>
 
       {(account.raw_analysis?.programNames?.length > 0) && (
-        <Card className="border-border">
-          <CardContent className="p-5 space-y-3">
+        <Card className="border-border card-premium rounded-xl">
+          <CardContent className="p-6 space-y-3">
             <h3 className="font-display text-sm font-semibold flex items-center gap-2">
               <Target className="h-4 w-4 text-primary" />Programmes et projets (noms réels)
             </h3>
@@ -101,8 +101,8 @@ function TabFiche({ account }: { account: AccountAnalysis }) {
         </Card>
       )}
       {(account.raw_analysis?.budgetSignals?.length > 0) && (
-        <Card className="border-border border-amber-500/20">
-          <CardContent className="p-5 space-y-3">
+        <Card className="border-border border-amber-500/20 card-premium rounded-xl">
+          <CardContent className="p-6 space-y-3">
             <h3 className="font-display text-sm font-semibold flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-amber-600" />Budget, référencement, blocages
             </h3>
@@ -116,8 +116,8 @@ function TabFiche({ account }: { account: AccountAnalysis }) {
       )}
 
       {(account.raw_analysis?.entitiesExhaustive?.length > 0) && (
-        <Card className="border-border">
-          <CardContent className="p-5 space-y-3">
+        <Card className="border-border card-premium rounded-xl">
+          <CardContent className="p-6 space-y-3">
             <h3 className="font-display text-sm font-semibold flex items-center gap-2">
               <Building2 className="h-4 w-4 text-primary" />Cartographie des entités
             </h3>
@@ -135,8 +135,8 @@ function TabFiche({ account }: { account: AccountAnalysis }) {
         </Card>
       )}
 
-      <Card className="border-border">
-        <CardContent className="p-5 space-y-3">
+      <Card className="border-border card-premium rounded-xl">
+        <CardContent className="p-6 space-y-3">
           <h3 className="font-display text-sm font-semibold flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-primary" />Enjeux IT identifiés
           </h3>
@@ -153,8 +153,8 @@ function TabFiche({ account }: { account: AccountAnalysis }) {
         </CardContent>
       </Card>
 
-      <Card className="border-border">
-        <CardContent className="p-5 space-y-3">
+      <Card className="border-border card-premium rounded-xl">
+        <CardContent className="p-6 space-y-3">
           <h3 className="font-display text-sm font-semibold flex items-center gap-2">
             <TrendingUp className="h-4 w-4 text-primary" />🔔 Signaux récents
           </h3>
@@ -175,8 +175,8 @@ function TabFiche({ account }: { account: AccountAnalysis }) {
         </CardContent>
       </Card>
 
-      <Card className="border-primary/20 bg-primary/5">
-        <CardContent className="p-5">
+      <Card className="border-primary/20 bg-primary/5 card-accent rounded-xl">
+        <CardContent className="p-6">
           <p className="text-xs font-semibold uppercase tracking-wider text-primary mb-1.5">Score de priorité : {account.priority_score}/10</p>
           <p className="text-sm text-foreground/80">&ldquo;{typeof account.priority_justification === "string" ? account.priority_justification : (account.priority_justification as { overall?: string } | null)?.overall ?? "—"}&rdquo;</p>
         </CardContent>
@@ -251,7 +251,7 @@ function TabContacts({ contacts, companyName }: { contacts: Contact[]; companyNa
         </div>
       </div>
 
-      <Card className="border-border overflow-hidden">
+      <div className="table-premium-wrapper">
         <Table>
           <TableHeader>
             <TableRow>
@@ -266,7 +266,7 @@ function TabContacts({ contacts, companyName }: { contacts: Contact[]; companyNa
             {filtered.map((c) => (
               <TableRow
                 key={c.id}
-                className={`cursor-pointer transition-colors row-hover ${c.id === selectedContact ? "bg-primary/5" : ""}`}
+                className={`table-row-hover cursor-pointer transition-colors ${c.id === selectedContact ? "bg-primary/5" : ""}`}
                 onClick={() => setSelectedContact(c.id === selectedContact ? null : c.id)}
               >
                 <TableCell className="align-middle">
@@ -290,11 +290,11 @@ function TabContacts({ contacts, companyName }: { contacts: Contact[]; companyNa
             )}
           </TableBody>
         </Table>
-      </Card>
+      </div>
 
       {/* Organigramme dynamique */}
-      <Card className="border-border">
-        <CardContent className="p-5 space-y-3">
+      <Card className="border-border card-premium rounded-xl">
+        <CardContent className="p-6 space-y-3">
           <h3 className="font-display text-sm font-semibold">Organigramme simplifié</h3>
           <div className="text-sm font-mono space-y-1 text-muted-foreground pl-2">
             {(() => {
@@ -336,8 +336,8 @@ function TabContacts({ contacts, companyName }: { contacts: Contact[]; companyNa
 
       {contact && (
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-          <Card className="border-border">
-            <CardContent className="p-5 space-y-4">
+          <Card className="border-border card-premium rounded-xl">
+            <CardContent className="p-6 space-y-4">
               <div className="flex items-center gap-3">
                 <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
                   <Users className="h-5 w-5 text-primary" />
@@ -443,8 +443,8 @@ function TabOrganigramme({ account, contacts }: { account: AccountAnalysis; cont
   return (
     <div className="space-y-6">
       {organigrammeLogic && (organigrammeLogic.hierarchy || organigrammeLogic.siblingEntities || organigrammeLogic.entryPoints) && (
-        <Card className="border-primary/20 bg-primary/5">
-          <CardContent className="p-5 space-y-3">
+        <Card className="border-primary/20 bg-primary/5 card-accent rounded-xl">
+          <CardContent className="p-6 space-y-3">
             <h3 className="font-display text-sm font-semibold">Logique commerciale</h3>
             {organigrammeLogic.hierarchy && (
               <div>
@@ -527,15 +527,15 @@ function TabOuvrirCompte({ raw }: { raw: unknown }) {
   const entryPoints = Array.isArray(d.entryPoints) ? d.entryPoints : [];
   return (
     <div className="space-y-6">
-      <Card className="border-border">
-        <CardContent className="p-5 space-y-3">
+      <Card className="border-border card-premium rounded-xl">
+        <CardContent className="p-6 space-y-3">
           <h3 className="font-display text-sm font-semibold">Stratégie d&apos;entrée</h3>
           <p className="text-sm text-foreground/90 whitespace-pre-line">{safeString(d.strategy)}</p>
         </CardContent>
       </Card>
       {entryPoints.length > 0 && (
-        <Card className="border-border">
-          <CardContent className="p-5 space-y-3">
+        <Card className="border-border card-premium rounded-xl">
+          <CardContent className="p-6 space-y-3">
             <h3 className="font-display text-sm font-semibold">Portes d&apos;entrée recommandées</h3>
             <ul className="space-y-2">
               {entryPoints.map((ep: unknown, i: number) => (
@@ -559,8 +559,8 @@ function TabOffresConstruire({ raw }: { raw: unknown }) {
   if (offers.length === 0) return <p className="text-sm text-muted-foreground">Aucune donnée disponible ou aucune offre recommandée.</p>;
   return (
     <div className="space-y-4">
-      <Card className="border-border">
-        <CardContent className="p-5 space-y-4">
+      <Card className="border-border card-premium rounded-xl">
+        <CardContent className="p-6 space-y-4">
           <h3 className="font-display text-sm font-semibold">Offres ESN à proposer</h3>
           {offers.map((o: unknown, i: number) => {
             const obj = o && typeof o === "object" ? o as { order?: number; offer?: unknown; interlocutor?: unknown; pitch?: unknown } : {};
@@ -592,8 +592,8 @@ function TabPlanHebdo({ raw }: { raw: unknown }) {
         const obj = w && typeof w === "object" ? w as { week?: number; theme?: unknown; actions?: unknown[] } : {};
         const actions = Array.isArray(obj.actions) ? obj.actions : [];
         return (
-          <Card key={i} className="border-border">
-            <CardContent className="p-5 space-y-2">
+          <Card key={i} className="border-border card-premium rounded-xl">
+            <CardContent className="p-6 space-y-2">
             <p className="text-xs font-semibold uppercase tracking-wider text-primary">Semaine {obj.week ?? i + 1} — {safeString(obj.theme)}</p>
             <ul className="list-disc list-inside text-sm space-y-1">
               {actions.map((a: unknown, j: number) => <li key={j}>{safeString(a)}</li>)}
@@ -615,21 +615,21 @@ function TabEvaluation({ raw }: { raw: unknown }) {
   const isGo = goNoGo === "GO";
   return (
     <div className="space-y-6">
-      <Card className={`border-2 ${isGo ? "border-bellum-success/50 bg-bellum-success/5" : "border-destructive/30 bg-destructive/5"}`}>
-        <CardContent className="p-5 space-y-2">
+      <Card className={`border-2 rounded-xl ${isGo ? "border-bellum-success/50 bg-bellum-success/5" : "border-destructive/30 bg-destructive/5"}`}>
+        <CardContent className="p-6 space-y-2">
           <p className="text-sm font-semibold">Recommandation : <span className={isGo ? "text-bellum-success" : "text-destructive"}>{safeString(d.goNoGo)}</span></p>
           <p className="text-2xl font-bold">Score global : {d.scoreGlobal != null ? String(d.scoreGlobal) : "—"}/10</p>
         </CardContent>
       </Card>
-      <Card className="border-border">
-        <CardContent className="p-5 space-y-3">
+      <Card className="border-border card-premium rounded-xl">
+        <CardContent className="p-6 space-y-3">
           <h3 className="font-display text-sm font-semibold">Justification</h3>
           <p className="text-sm text-foreground/90 whitespace-pre-line">{safeString(d.justification)}</p>
         </CardContent>
       </Card>
       {d.recommandation != null && safeString(d.recommandation) !== "—" && (
-        <Card className="border-border">
-          <CardContent className="p-5">
+        <Card className="border-border card-premium rounded-xl">
+          <CardContent className="p-6">
             <h3 className="font-display text-sm font-semibold mb-2">Recommandation</h3>
             <p className="text-sm text-foreground/90 whitespace-pre-line">{safeString(d.recommandation)}</p>
           </CardContent>
@@ -665,8 +665,8 @@ function TabPlan({ angles, actionPlan }: { angles: AttackAngle[]; actionPlan: Ac
       <p className="text-xs text-muted-foreground">
         Les messages (email, LinkedIn, relance) sont prêts dans l&apos;onglet <strong>Messages</strong>. Ce plan indique qui contacter, quand et dans quel ordre.
       </p>
-      <Card className="border-primary/20 bg-primary/5">
-        <CardContent className="p-5">
+      <Card className="border-primary/20 bg-primary/5 card-accent rounded-xl">
+        <CardContent className="p-6">
           <p className="text-xs font-semibold uppercase tracking-wider text-primary mb-1.5">
             Stratégie recommandée : {actionPlan?.strategy_type || "—"}
           </p>
@@ -679,8 +679,8 @@ function TabPlan({ angles, actionPlan }: { angles: AttackAngle[]; actionPlan: Ac
           <Target className="h-4 w-4 text-primary" />{angles.length} angle{angles.length > 1 ? "s" : ""} d&apos;attaque
         </h3>
         {angles.map((angle) => (
-          <Card key={angle.id} className={`border-border ${angle.is_recommended ? "border-primary/30 ring-1 ring-primary/10" : ""}`}>
-            <CardContent className="p-5 space-y-2">
+          <Card key={angle.id} className={`border-border card-premium rounded-xl ${angle.is_recommended ? "border-primary/30 ring-1 ring-primary/10" : ""}`}>
+            <CardContent className="p-6 space-y-2">
               <div className="flex items-center justify-between">
                 <h4 className="font-semibold text-sm flex items-center gap-2">
                   <Target className="h-4 w-4 text-primary" />{angle.title}
@@ -698,8 +698,8 @@ function TabPlan({ angles, actionPlan }: { angles: AttackAngle[]; actionPlan: Ac
       <div className="space-y-4">
         <h3 className="font-display text-sm font-semibold">Plan d&apos;action</h3>
         {weeksList.map((week) => (
-          <Card key={`${week.week}-${week.title}`} className="border-border">
-            <CardContent className="p-5 space-y-3">
+          <Card key={`${week.week}-${week.title}`} className="border-border card-premium rounded-xl">
+            <CardContent className="p-6 space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-primary">
                 {week.week} — {week.title}
               </p>
@@ -782,8 +782,8 @@ function TabMessages({ contacts }: { contacts: Contact[] }) {
               Pour : {g.contact.full_name} ({g.contact.title || "—"})
             </p>
             {filteredMsgs.map((m, i) => (
-              <Card key={i} className="border-border">
-                <CardContent className="p-4 space-y-2">
+              <Card key={i} className="border-border card-premium rounded-xl">
+                <CardContent className="p-5 space-y-2">
                   <div className="flex items-center justify-between">
                     <Badge variant="secondary" className="text-xs gap-1">
                       {m.type === "email" && <><Mail className="h-3 w-3" />Email</>}
@@ -921,7 +921,7 @@ export default function AccountDetail() {
       )}
 
       {/* Header */}
-      <motion.div initial="hidden" animate="visible" variants={fadeUp} className="space-y-4">
+      <motion.div initial="hidden" animate="visible" variants={fadeUp} className="header-premium space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate("/accounts")}>
@@ -996,17 +996,18 @@ export default function AccountDetail() {
       </motion.div>
 
       {/* Tabs */}
+      <div className="tabs-premium">
       <Tabs defaultValue="fiche">
-        <TabsList className="bg-secondary/50 flex-wrap h-auto gap-1">
-          <TabsTrigger value="fiche">Fiche compte</TabsTrigger>
-          <TabsTrigger value="contacts">Contacts ({contactCount})</TabsTrigger>
-          <TabsTrigger value="organigramme">Organigramme</TabsTrigger>
-          <TabsTrigger value="plan">Plan d&apos;action</TabsTrigger>
-          <TabsTrigger value="ouvrir">Ouvrir ce compte</TabsTrigger>
-          <TabsTrigger value="offres">Offres à construire</TabsTrigger>
-          <TabsTrigger value="plan-hebdo">Plan hebdo</TabsTrigger>
-          <TabsTrigger value="evaluation">Évaluation</TabsTrigger>
-          <TabsTrigger value="messages">Messages</TabsTrigger>
+        <TabsList className="bg-secondary/50 flex-wrap h-auto gap-1.5 p-1.5 rounded-xl">
+          <TabsTrigger value="fiche" className="rounded-lg px-4 py-2">Fiche compte</TabsTrigger>
+          <TabsTrigger value="contacts" className="rounded-lg px-4 py-2">Contacts ({contactCount})</TabsTrigger>
+          <TabsTrigger value="organigramme" className="rounded-lg px-4 py-2">Organigramme</TabsTrigger>
+          <TabsTrigger value="plan" className="rounded-lg px-4 py-2">Plan d&apos;action</TabsTrigger>
+          <TabsTrigger value="ouvrir" className="rounded-lg px-4 py-2">Ouvrir ce compte</TabsTrigger>
+          <TabsTrigger value="offres" className="rounded-lg px-4 py-2">Offres à construire</TabsTrigger>
+          <TabsTrigger value="plan-hebdo" className="rounded-lg px-4 py-2">Plan hebdo</TabsTrigger>
+          <TabsTrigger value="evaluation" className="rounded-lg px-4 py-2">Évaluation</TabsTrigger>
+          <TabsTrigger value="messages" className="rounded-lg px-4 py-2">Messages</TabsTrigger>
         </TabsList>
 
         <TabsContent value="fiche" className="mt-6"><TabFiche account={account} /></TabsContent>
@@ -1019,10 +1020,11 @@ export default function AccountDetail() {
         <TabsContent value="evaluation" className="mt-6"><TabEvaluation raw={account.raw_analysis} /></TabsContent>
         <TabsContent value="messages" className="mt-6"><TabMessages contacts={contacts as Contact[]} /></TabsContent>
       </Tabs>
+      </div>
 
       {/* Adjust zone */}
-      <Card className="border-border">
-        <CardContent className="p-5 space-y-3">
+      <Card className="border-border card-premium rounded-xl">
+        <CardContent className="p-6 space-y-3">
           <h3 className="font-display text-sm font-semibold flex items-center gap-2">
             <Pencil className="h-4 w-4 text-primary" />Ajuster la recherche
           </h3>

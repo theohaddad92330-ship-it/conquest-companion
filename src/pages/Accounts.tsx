@@ -186,7 +186,7 @@ export default function Accounts() {
       </motion.div>
 
       <motion.div initial="hidden" animate="visible" variants={fadeUp} transition={{ delay: 0.1 }}>
-        <div className="rounded-lg border border-border bg-card overflow-hidden">
+        <div className="table-premium-wrapper">
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
@@ -203,7 +203,7 @@ export default function Accounts() {
               {paginated.map((account, i) => (
                 <TableRow
                   key={account.id}
-                  className={`cursor-pointer row-hover ${i % 2 !== 0 ? "bg-secondary/20" : ""}`}
+                  className={`table-row-hover cursor-pointer ${i % 2 !== 0 ? "bg-secondary/20" : ""}`}
                   onClick={() => navigate(`/accounts/${account.id}`)}
                 >
                   <TableCell className="font-medium flex items-center gap-2">
