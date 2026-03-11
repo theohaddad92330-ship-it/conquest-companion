@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useAccount, useAccountActionPlan, useAccountAngles, useAccountContacts, useCancelAnalysis } from "@/hooks/useAccounts";
+import { useProfile } from "@/hooks/useProfile";
 import type { AccountAnalysis, Contact, AttackAngle, ActionPlan } from "@/types/account";
 import { generateCSV, downloadCSV } from "@/lib/export-csv";
 import { safeString } from "@/lib/utils";
@@ -89,11 +90,25 @@ function TabFiche({ account }: { account: AccountAnalysis }) {
         <Card className="border-border">
           <CardContent className="p-5 space-y-3">
             <h3 className="font-display text-sm font-semibold flex items-center gap-2">
-              <Target className="h-4 w-4 text-primary" />Programmes et projets détectés
+              <Target className="h-4 w-4 text-primary" />Programmes et projets (noms réels)
             </h3>
             <ul className="text-sm space-y-1">
               {(account.raw_analysis?.programNames || []).map((item: unknown, i: number) => (
                 <li key={i} className="flex items-center gap-2"><span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />{safeString(item)}</li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+      {(account.raw_analysis?.budgetSignals?.length > 0) && (
+        <Card className="border-border border-amber-500/20">
+          <CardContent className="p-5 space-y-3">
+            <h3 className="font-display text-sm font-semibold flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />Budget, référencement, blocages
+            </h3>
+            <ul className="text-sm space-y-1">
+              {(account.raw_analysis.budgetSignals || []).map((s: unknown, i: number) => (
+                <li key={i} className="flex items-center gap-2"><span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" />{safeString(s)}</li>
               ))}
             </ul>
           </CardContent>
@@ -112,6 +127,7 @@ function TabFiche({ account }: { account: AccountAnalysis }) {
                   <Badge variant="outline" className="text-xs">{safeString((e as { name?: string })?.name)}</Badge>
                   <span className="text-muted-foreground text-xs">{safeString((e as { type?: string })?.type)}</span>
                   {(e as { parent?: string })?.parent != null && <span className="text-muted-foreground text-xs">← {safeString((e as { parent?: string }).parent)}</span>}
+                  {(e as { region?: string })?.region != null && <span className="text-muted-foreground text-xs">· {safeString((e as { region?: string }).region)}</span>}
                 </div>
               ))}
             </div>
@@ -175,6 +191,8 @@ function TabContacts({ contacts, companyName }: { contacts: Contact[]; companyNa
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [roleFilter, setRoleFilter] = useState("all");
   const contact = contacts.find((c) => c.id === selectedContact);
+  const aiGeneratedCount = contacts.filter((c) => (c.source || "").toLowerCase() === "ai_generated").length;
+  const showAiBanner = aiGeneratedCount > 0;
 
   const roles = [...new Set(contacts.map(c => c.decision_role).filter(Boolean))];
 
@@ -186,8 +204,21 @@ function TabContacts({ contacts, companyName }: { contacts: Contact[]; companyNa
 
   return (
     <div className="space-y-6">
+      {showAiBanner && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-foreground/90">
+          <p className="font-medium text-amber-700 dark:text-amber-400">Profils types suggérés (pas de personnes réelles)</p>
+          <p className="mt-1 text-muted-foreground">
+            Aucun contact LinkedIn n&apos;a été trouvé pour ce compte (Apify n&apos;a pas retourné de profils). Les noms et postes ci-dessous sont des <strong>profils types</strong> générés par l&apos;IA pour structurer votre approche — à remplacer par de vrais contacts une fois identifiés (LinkedIn, annuaire, etc.).
+          </p>
+        </div>
+      )}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <p className="text-sm text-muted-foreground">{contacts.length} contacts identifiés</p>
+        <p className="text-sm text-muted-foreground">
+          {contacts.length} contacts identifiés
+          {contacts.length > 0 && (
+            <span className="ml-1.5 text-xs text-muted-foreground/80">— prêts à mobiliser (emails, LinkedIn, relances)</span>
+          )}
+        </p>
         <div className="flex items-center gap-2">
           <Select value={priorityFilter} onValueChange={setPriorityFilter}>
             <SelectTrigger className="w-[130px] h-8 text-xs bg-card"><SelectValue placeholder="Priorité" /></SelectTrigger>
@@ -220,34 +251,34 @@ function TabContacts({ contacts, companyName }: { contacts: Contact[]; companyNa
         </div>
       </div>
 
-      <Card className="border-border">
+      <Card className="border-border overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="text-xs">Priorité</TableHead>
-              <TableHead className="text-xs">Nom</TableHead>
-              <TableHead className="text-xs">Poste</TableHead>
-              <TableHead className="text-xs">Entité</TableHead>
-              <TableHead className="text-xs">Rôle</TableHead>
+              <TableHead className="text-xs w-20">Priorité</TableHead>
+              <TableHead className="text-xs min-w-[120px]">Nom</TableHead>
+              <TableHead className="text-xs min-w-[160px]">Poste</TableHead>
+              <TableHead className="text-xs min-w-[140px]">Entité</TableHead>
+              <TableHead className="text-xs min-w-[100px] whitespace-nowrap">Rôle</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.map((c, i) => (
+            {filtered.map((c) => (
               <TableRow
                 key={c.id}
                 className={`cursor-pointer transition-colors row-hover ${c.id === selectedContact ? "bg-primary/5" : ""}`}
                 onClick={() => setSelectedContact(c.id === selectedContact ? null : c.id)}
               >
-                <TableCell>
+                <TableCell className="align-middle">
                   <div className="flex items-center gap-1">
-                    <Star className="h-3 w-3 text-bellum-warning" />
+                    <Star className="h-3 w-3 text-bellum-warning shrink-0" />
                     <span className="font-mono text-xs">{c.priority}</span>
                   </div>
                 </TableCell>
-                <TableCell className="font-medium text-sm">{c.full_name}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">{c.title || "—"}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">{c.entity || "—"}</TableCell>
-                <TableCell><Badge variant="secondary" className="text-xs">{c.decision_role || "unknown"}</Badge></TableCell>
+                <TableCell className="font-medium text-sm align-middle">{c.full_name}</TableCell>
+                <TableCell className="text-sm text-muted-foreground align-middle">{c.title || "—"}</TableCell>
+                <TableCell className="text-sm text-muted-foreground align-middle">{c.entity || "—"}</TableCell>
+                <TableCell className="align-middle"><Badge variant="secondary" className="text-xs capitalize">{c.decision_role || "unknown"}</Badge></TableCell>
               </TableRow>
             ))}
             {filtered.length === 0 && (
@@ -319,9 +350,13 @@ function TabContacts({ contacts, companyName }: { contacts: Contact[]; companyNa
                       <Badge variant="secondary" className="text-[10px] bg-blue-500/10 text-blue-400 border-blue-500/20">
                         LinkedIn
                       </Badge>
+                    ) : contact.source === "web_mentioned" ? (
+                      <Badge variant="secondary" className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+                        Mention web
+                      </Badge>
                     ) : (
                       <Badge variant="secondary" className="text-[10px] bg-primary/10 text-primary border-primary/20">
-                        IA
+                        Profil type
                       </Badge>
                     )}
                   </div>
@@ -374,6 +409,8 @@ function TabContacts({ contacts, companyName }: { contacts: Contact[]; companyNa
 }
 
 function TabOrganigramme({ account, contacts }: { account: AccountAnalysis; contacts: Contact[] }) {
+  const organigrammeLogic = account.raw_analysis?.organigrammeLogic as { hierarchy?: string; siblingEntities?: string; entryPoints?: string } | undefined;
+
   const entities = useMemo(() => {
     const fromRaw = (account.raw_analysis?.entitiesExhaustive || []).map((e: unknown) => safeString((e as { name?: string })?.name));
     if (fromRaw.length > 0) return [...new Set(fromRaw)];
@@ -405,8 +442,33 @@ function TabOrganigramme({ account, contacts }: { account: AccountAnalysis; cont
 
   return (
     <div className="space-y-6">
+      {organigrammeLogic && (organigrammeLogic.hierarchy || organigrammeLogic.siblingEntities || organigrammeLogic.entryPoints) && (
+        <Card className="border-primary/20 bg-primary/5">
+          <CardContent className="p-5 space-y-3">
+            <h3 className="font-display text-sm font-semibold">Logique commerciale</h3>
+            {organigrammeLogic.hierarchy && (
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-0.5">Hiérarchie</p>
+                <p className="text-sm text-foreground/90">{organigrammeLogic.hierarchy}</p>
+              </div>
+            )}
+            {organigrammeLogic.siblingEntities && (
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-0.5">Filiales côte à côte (métiers)</p>
+                <p className="text-sm text-foreground/90">{organigrammeLogic.siblingEntities}</p>
+              </div>
+            )}
+            {organigrammeLogic.entryPoints && (
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-0.5">Portes d&apos;entrée</p>
+                <p className="text-sm text-foreground/90">{organigrammeLogic.entryPoints}</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
       <p className="text-xs text-muted-foreground">
-        Hiérarchie : entités du groupe et décideurs identifiés. Les zones sans contact sont signalées.
+        Entités du groupe et contacts identifiés par entité. Les zones sans contact sont signalées.
       </p>
       <div className="relative">
         {/* Niveau 0 : entreprise */}
@@ -577,9 +639,32 @@ function TabEvaluation({ raw }: { raw: unknown }) {
   );
 }
 
+// Normalise les semaines du plan (backend peut renvoyer phases avec name/actions ou weeks avec week/title/items)
+function normalizePlanWeeks(weeks: unknown): { week: number; title: string; items: { text: string; responsable?: string; outil?: string; deadline?: string; kpi?: string }[] }[] {
+  const raw = Array.isArray(weeks) ? weeks : [];
+  if (raw.length === 0) return [];
+  return raw.map((w: any, i: number) => {
+    const title = w.title ?? w.name ?? w.timeframe ?? `Phase ${i + 1}`;
+    const actionsOrItems = w.actions ?? w.items ?? [];
+    const items = actionsOrItems.map((a: any) => ({
+      text: a.text ?? a.action ?? "",
+      responsable: a.responsable ?? a.contact,
+      outil: a.outil ?? a.channel,
+      deadline: a.deadline,
+      kpi: a.kpi,
+    }));
+    return { week: typeof w.week === "number" ? w.week : i + 1, title: String(title), items };
+  });
+}
+
 function TabPlan({ angles, actionPlan }: { angles: AttackAngle[]; actionPlan: ActionPlan | null }) {
+  const weeksList = normalizePlanWeeks(actionPlan?.weeks ?? []);
+
   return (
     <div className="space-y-6">
+      <p className="text-xs text-muted-foreground">
+        Les messages (email, LinkedIn, relance) sont prêts dans l&apos;onglet <strong>Messages</strong>. Ce plan indique qui contacter, quand et dans quel ordre.
+      </p>
       <Card className="border-primary/20 bg-primary/5">
         <CardContent className="p-5">
           <p className="text-xs font-semibold uppercase tracking-wider text-primary mb-1.5">
@@ -611,28 +696,27 @@ function TabPlan({ angles, actionPlan }: { angles: AttackAngle[]; actionPlan: Ac
       </div>
 
       <div className="space-y-4">
-        <h3 className="font-display text-sm font-semibold">Plan d&apos;action 4 semaines</h3>
-        {(actionPlan?.weeks || []).map((week) => (
-          <Card key={week.week} className="border-border">
+        <h3 className="font-display text-sm font-semibold">Plan d&apos;action</h3>
+        {weeksList.map((week) => (
+          <Card key={`${week.week}-${week.title}`} className="border-border">
             <CardContent className="p-5 space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-primary">
-                Semaine {week.week} — {week.title}
+                {week.week} — {week.title}
               </p>
               <div className="space-y-2">
                 {week.items.map((item, i) => {
-                  const extra = (item as { responsable?: string; outil?: string; deadline?: string; kpi?: string });
-                  const hasMeta = extra.responsable || extra.outil || extra.deadline || extra.kpi;
+                  const hasMeta = item.responsable || item.outil || item.deadline || item.kpi;
                   return (
                     <div key={i} className="flex items-start gap-2.5 text-sm">
                       <Checkbox className="mt-0.5" />
                       <div className="flex-1 min-w-0">
-                        <span className="text-foreground/80">{item.text}</span>
+                        <span className="text-foreground/80">{item.text || "—"}</span>
                         {hasMeta && (
                           <div className="flex flex-wrap gap-2 mt-1.5 text-xs text-muted-foreground">
-                            {extra.responsable && <span>Responsable : {extra.responsable}</span>}
-                            {extra.outil && <span>Outil : {extra.outil}</span>}
-                            {extra.deadline && <span>Deadline : {extra.deadline}</span>}
-                            {extra.kpi && <span>KPI : {extra.kpi}</span>}
+                            {item.responsable && <span>Responsable : {item.responsable}</span>}
+                            {item.outil && <span>Outil : {item.outil}</span>}
+                            {item.deadline && <span>Deadline : {item.deadline}</span>}
+                            {item.kpi && <span>KPI : {item.kpi}</span>}
                           </div>
                         )}
                       </div>
@@ -643,7 +727,7 @@ function TabPlan({ angles, actionPlan }: { angles: AttackAngle[]; actionPlan: Ac
             </CardContent>
           </Card>
         ))}
-        {(actionPlan?.weeks || []).length === 0 && <p className="text-sm text-muted-foreground">—</p>}
+        {weeksList.length === 0 && <p className="text-sm text-muted-foreground">Aucun plan d&apos;action enregistré pour ce compte.</p>}
       </div>
     </div>
   );
@@ -747,6 +831,8 @@ export default function AccountDetail() {
   const { angles } = useAccountAngles(id);
   const { actionPlan } = useAccountActionPlan(id);
   const cancelAnalysis = useCancelAnalysis();
+  const { profile } = useProfile();
+  const isProfileReady = profile?.onboarding_completed && profile?.onboarding_data;
   const [adjustPrompt, setAdjustPrompt] = useState("");
 
   const isAnalyzing = account?.status === "analyzing";
@@ -842,15 +928,32 @@ export default function AccountDetail() {
               <ArrowLeft className="h-4 w-4" />
             </Button>
             <div>
-              <h1 className="font-display text-2xl font-bold">{account.company_name}</h1>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="font-display text-2xl font-bold">{account.company_name}</h1>
+                {isProfileReady && (
+                  <Badge variant="secondary" className="text-[10px] font-normal bg-primary/10 text-primary border-primary/20">
+                    Adapté à votre profil
+                  </Badge>
+                )}
+              </div>
               <p className="text-sm text-muted-foreground">{account.sector || "—"}</p>
+              {isProfileReady && (
+                <p className="text-xs text-muted-foreground/80 mt-0.5">Plan, contacts et messages alignés avec vos critères (secteurs, géo, personas)</p>
+              )}
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Score :</span>
-              <Progress value={account.priority_score * 10} className="w-20 h-2" />
-              <PriorityBadge score={account.priority_score} size="sm" />
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Score :</span>
+                <Progress value={account.priority_score * 10} className="w-20 h-2" />
+                <PriorityBadge score={account.priority_score} size="sm" />
+              </div>
+              {account.priority_justification && (
+                <p className="text-[10px] text-muted-foreground/90 max-w-xs leading-tight mt-0.5">
+                  {typeof account.priority_justification === "string" ? account.priority_justification : (account.priority_justification as { overall?: string })?.overall ?? ""}
+                </p>
+              )}
             </div>
             <Button
               variant="outline"

@@ -62,6 +62,27 @@ serve(async (req) => {
   }
 })
 
+// Normalise les phases Claude (name, timeframe, actions) vers le format attendu par le frontend (week, title, items)
+function normalizeActionPlanWeeks(raw: any[]): any[] {
+  if (!Array.isArray(raw) || raw.length === 0) return []
+  const first = raw[0]
+  // Déjà au format frontend (week, title, items)
+  if (first?.items && Array.isArray(first.items)) return raw
+  // Format Claude : name, timeframe, actions: [{ action, contact, channel, deadline, kpi }]
+  return raw.map((p: any, i: number) => ({
+    week: i + 1,
+    title: p.name || p.timeframe || p.title || `Phase ${i + 1}`,
+    items: (p.actions || p.items || []).map((a: any) => ({
+      text: a.action ?? a.text ?? '',
+      done: false,
+      responsable: a.contact,
+      deadline: a.deadline,
+      kpi: a.kpi,
+      outil: a.channel,
+    })),
+  }))
+}
+
 // ============================================================
 // ORCHESTRATION PRINCIPALE — 4 PHASES
 // ============================================================
@@ -118,8 +139,8 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
     let apifyWorked = false
 
     if (APIFY_API_TOKEN) {
-      // 2a. Company Employees (principal)
-      const companyEmployees = await apify_CompanyEmployees(companyName, research.linkedinSearchKeywords, traceId, braveResults.linkedinCompanyUrl)
+      // 2a. Company Employees (principal) — filtre géo si profil France/Europe uniquement
+      const companyEmployees = await apify_CompanyEmployees(companyName, research.linkedinSearchKeywords, traceId, braveResults.linkedinCompanyUrl, onboardingData)
       if (companyEmployees.length > 0) {
         rawContacts.push(...companyEmployees)
         apifyWorked = true
@@ -127,7 +148,7 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
 
       // 2b. Profile Search (complémentaire) — si Company Employees n'a pas assez de résultats
       if (rawContacts.length < 30 && research.linkedinSearchKeywords) {
-        const searchResults = await apify_ProfileSearch(companyName, research.linkedinSearchKeywords, traceId)
+        const searchResults = await apify_ProfileSearch(companyName, research.linkedinSearchKeywords, traceId, onboardingData)
         if (searchResults.length > 0) {
           rawContacts.push(...searchResults)
           apifyWorked = true
@@ -149,11 +170,25 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
       console.log(JSON.stringify({ event: 'phase2_skipped', traceId, reason: 'no_apify_token' }))
     }
 
+    // Fallback : personnes réelles extraites du contenu web (Brave + Firecrawl) par Claude en Phase 1
+    let fromWebMentioned = false
+    if (rawContacts.length === 0 && Array.isArray(research.peopleMentioned) && research.peopleMentioned.length > 0) {
+      rawContacts = research.peopleMentioned.map((p: any) => ({
+        name: p.name || '',
+        title: p.title || '',
+        about: (p.context || '').slice(0, 300),
+        linkedin: null,
+        location: '',
+      }))
+      fromWebMentioned = true
+      console.log(JSON.stringify({ event: 'phase2_web_fallback', traceId, peopleMentionedCount: rawContacts.length }))
+    }
+
     // ════════════════════════════════════════
     // PHASE 3 — ENRICHISSEMENT CONTACTS
     // ════════════════════════════════════════
-    console.log(JSON.stringify({ event: 'phase3_start', traceId, rawContactsCount: rawContacts.length, apifyWorked }))
-    const enrichResult = await callClaude_Contacts(companyName, rawContacts, research, onboardingData, apifyWorked, traceId)
+    console.log(JSON.stringify({ event: 'phase3_start', traceId, rawContactsCount: rawContacts.length, apifyWorked, fromWebMentioned }))
+    const enrichResult = await callClaude_Contacts(companyName, rawContacts, research, onboardingData, apifyWorked, fromWebMentioned, traceId)
     const enrichedContacts = enrichResult.contacts
     const contactsMeta = enrichResult.meta
     console.log(JSON.stringify({ event: 'phase3_done', traceId, enrichedCount: enrichedContacts.length }))
@@ -175,7 +210,7 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
           email_message: c.emailMessage || null,
           linkedin_message: c.linkedinMessage || null,
           followup_message: c.followupMessage || null,
-          source: apifyWorked ? 'linkedin_apify' : 'ai_generated',
+          source: apifyWorked ? 'linkedin_apify' : (fromWebMentioned ? 'web_mentioned' : 'ai_generated'),
         }))
       )
     }
@@ -197,13 +232,15 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
     console.log(JSON.stringify({ event: 'phase4_done', traceId, hasPlan: !!plan }))
 
     if (plan) {
-      // Sauvegarder le plan d'action
+      // Sauvegarder le plan d'action (format frontend : weeks = [{ week, title, items: [{ text, done, ... }] }])
       if (plan.actionPlan) {
+        const rawPhases = plan.actionPlan.phases || plan.actionPlan.weeks || []
+        const weeks = normalizeActionPlanWeeks(rawPhases)
         await supabase.from('action_plans').insert({
           account_id: accountId, user_id: userId,
           strategy_type: plan.actionPlan.strategyType || 'multi_thread',
           strategy_justification: plan.actionPlan.strategyJustification || '',
-          weeks: plan.actionPlan.phases || plan.actionPlan.weeks || [],
+          weeks,
         })
       }
 
@@ -228,6 +265,18 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
   }
 }
 
+// Contexte profil utilisateur pour personnaliser tous les livrables
+function buildProfileContext(onboardingData: any): { geoFocus: string; personaFocus: string; oneLiner: string } {
+  const geo = onboardingData.geo || []
+  const hasInternational = Array.isArray(geo) && geo.includes('International')
+  const geoFocus = hasInternational ? 'Monde' : (Array.isArray(geo) && geo.length > 0 ? 'France et Europe (priorité aux zones choisies par l\'utilisateur)' : 'France et Europe')
+  const personas = onboardingData.personas || []
+  const personaFocus = Array.isArray(personas) && personas.length > 0 ? personas.join(', ') : 'DSI, CTO, Directeurs, Achats IT, Opérationnels'
+  const sectors = (onboardingData.sectors || []).slice(0, 3).join(', ')
+  const oneLiner = [onboardingData.esnName, onboardingData.size, sectors, geoFocus].filter(Boolean).join(' · ')
+  return { geoFocus, personaFocus, oneLiner }
+}
+
 // ============================================================
 // BRAVE SEARCH
 // ============================================================
@@ -235,14 +284,18 @@ async function searchBrave(companyName: string, onboardingData: any, traceId: st
   if (!BRAVE_API_KEY) { console.log(JSON.stringify({ event: 'brave_skip', traceId })); return { results: [], urls: [], linkedinCompanyUrl: null } }
   const year = new Date().getFullYear()
   const offers = (onboardingData.offers || []).slice(0, 2).join(' ')
+  const geo = onboardingData.geo || []
+  const hasInternational = Array.isArray(geo) && geo.includes('International')
 
   const queries = [
     `${companyName} stratégie transformation digitale projet IT ${year}`,
     `${companyName} recrutement DSI CTO nomination filiales ${year}`,
     `${companyName} prestataire ESN budget IT investissement`,
     `${companyName} site:linkedin.com/company`,
+    `${companyName} DSI directeur digital nommé nomination`,
   ]
   if (offers) queries.push(`${companyName} ${offers} programme projet`)
+  if (!hasInternational) queries.push(`${companyName} France siège filiales`)
 
   try {
     const all = await Promise.allSettled(queries.map(q =>
@@ -302,32 +355,37 @@ async function scrapePages(urls: string[], traceId: string): Promise<string> {
 // ============================================================
 async function callClaude_Research(companyName: string, braveResults: any, scrapedContent: string, userContext: string | null, onboardingData: any, traceId: string): Promise<any | null> {
   if (!ANTHROPIC_API_KEY) { console.error(JSON.stringify({ event: 'claude1_no_key', traceId })); return null }
+  const profile = buildProfileContext(onboardingData)
 
   const systemPrompt = `Tu es BELLUM, l'agent d'intelligence commerciale de BellumAI.
-Ta mission : analyser un compte cible et produire un plan de conquête B2B complet pour un commercial d'ESN.
-Tu produis des livrables structurés fondés UNIQUEMENT sur les données réelles fournies.
+Ta mission : analyser un compte cible et produire un plan de conquête B2B complet, PERSONNALISÉ au profil du commercial qui va l'utiliser.
+Tout ce que tu produis doit être ACTIONNABLE : orga claire, filiales, programmes, projets, annonces, et plusieurs PORTES D'ENTRÉE (pas seulement le CEO — équipes métier, sponsors, champions, achats, opérationnels).
+Tu produis des livrables fondés UNIQUEMENT sur les données réelles fournies. Aucune invention.
 
-PROFIL ESN :
-- Nom : ${onboardingData.esnName || 'Non renseigné'}
-- Taille : ${onboardingData.size || 'Non renseignée'}
+PROFIL UTILISATEUR (adapter tout à ce profil) :
+- ESN : ${onboardingData.esnName || 'Non renseigné'}, Taille : ${onboardingData.size || 'Non renseignée'}
 - Offres : ${JSON.stringify(onboardingData.offers || [])}
-- Secteurs : ${JSON.stringify(onboardingData.sectors || [])}
-- Personas cibles : ${JSON.stringify(onboardingData.personas || [])}
+- Secteurs ciblés : ${JSON.stringify(onboardingData.sectors || [])}
+- Personas cibles : ${profile.personaFocus}
+- Zone géo prioritaire : ${profile.geoFocus}
 - Type clients : ${JSON.stringify(onboardingData.clientType || [])}
-- TJM : ${onboardingData.avgTJM || 'Non renseigné'}
-- Cycle de vente : ${onboardingData.salesCycle || 'Non renseigné'}
-- Défi principal : ${onboardingData.mainChallenge || 'Non renseigné'}
-- Taille équipe : ${onboardingData.salesTeamSize || 'Non renseigné'}
+- TJM : ${onboardingData.avgTJM || 'Non renseigné'}, Cycle : ${onboardingData.salesCycle || 'Non renseigné'}
+- Défi commercial : ${onboardingData.mainChallenge || 'Non renseigné'}
+- Équipe : ${onboardingData.salesTeamSize || 'Non renseigné'}
 ${userContext ? 'CONTEXTE UTILISATEUR : ' + userContext : ''}
 
-RÈGLES D'ADAPTATION :
-- ESN petite (1-20) → bottom-up, cibler opérationnels, pas de DSI en premier
-- ESN grande (200+) → approche institutionnelle, multi-thread, référencement
-- Grands comptes + petite ESN → sous-traitance, filiale secondaire, sponsorship interne
-- Cycle court → plan 4 semaines. Cycle long → plan 12 mois.
-- TJM bas → volume/flexibilité. TJM haut → conseil stratégique, C-levels.
+RÈGLES :
+- Adapter angles et portes d'entrée au profil (petite ESN → bottom-up, opérationnels; grande ESN → multi-thread, référencement).
+- commentOuvrirCompte : proposer PLUSIEURS portes d'entrée (pas que le top), avec justification et plan B pour chacune.
+- Identifier programmes IT avec VRAIS noms (ex. NEMO), projets, annonces, baisses de budget, blocages référencement, signaux d'achat.
+- Entités : sièges régionaux, filiales métiers (ex. RESG), pas seulement le groupe. Qui dépend de qui.
+- priorityScore : CALIBRER selon la taille ESN du profil. 0-20 consultants = très dur d'ouvrir un grand compte → score 4-6 et le dire dans overall. 200+ et bon alignement → 7-9. Jamais mettre 9/10 par défaut.
+- organigrammeLogic : logique commerciale (hiérarchie, filiales côte à côte par métier, bonnes portes d'entrée).
+- Si zone = France/Europe uniquement, privilégier siège/filiales France et UE.
 
-ANTI-HALLUCINATION : chaque donnée sourcée. Si non trouvé → "Non détecté". Ne jamais inventer de chiffres.
+ANTI-HALLUCINATION : chaque donnée sourcée. Si non trouvé → "Non détecté". Ne jamais inventer.
+
+PEOPLEMENTIONED : repère TOUTES les personnes RÉELLES citées dans le contenu (nominations, interviews, communiqués). name, title, context, source. Ne pas inventer de noms.
 
 Réponds UNIQUEMENT en JSON valide. Pas de texte avant/après. Pas de backticks.`
 
@@ -339,6 +397,12 @@ ${JSON.stringify(braveResults.results, null, 2)}
 CONTENU SCRAPÉ :
 ${scrapedContent}
 
+RÈGLES CRITIQUES :
+- programNames : des VRAIS noms de programmes/projets (ex. "Programme NEMO", "Projet Phoenix"), pas des thématiques génériques. Si trouvé dans les données, les citer. Sinon "Non détecté".
+- entitiesExhaustive : inclure sièges et entités en RÉGION (sièges locaux, directions régionales), pas seulement le siège central. Pour les groupes (ex. banques) : filiales métiers (RESG, banque de détail, banque privée, etc.) avec type et parent.
+- Rechercher dans les données : baisses de budget IT, blocages ou perte de référencement rang 1, difficultés fournisseurs, autres filiales connues (ex. RESG pour SocGen).
+- priorityScore : DOIT refléter la difficulté pour CE profil. Ex. si l'utilisateur a 0-20 consultants (petite ESN), ouvrir un grand compte = très dur → score 4-6 pas 9. Si 200+ consultants et bon alignement → score 8-9. Justification détaillée dans priorityJustification.overall.
+
 Produis ce JSON :
 {
   "companyNameCorrected": "Nom exact",
@@ -349,13 +413,14 @@ Produis ce JSON :
   "website": "URL",
   "isPublic": false,
   "subsidiaries": ["Filiale 1"],
-  "entitiesExhaustive": [{"name": "Entité", "type": "filiale|BU|groupe", "parent": "Parent"}],
-  "programNames": [{"name": "Programme", "entity": "Entité", "description": "Desc", "technologies": ["Tech"]}],
+  "entitiesExhaustive": [{"name": "Entité ou siège régional", "type": "filiale|BU|siège_régional|groupe", "parent": "Parent", "region": "Région si applicable"}],
+  "programNames": [{"name": "Nom RÉEL du programme (ex. NEMO)", "entity": "Entité", "description": "Desc", "technologies": ["Tech"]}],
+  "budgetSignals": ["Baisse budget", "Blocage ref", "..."],
   "itChallenges": ["Enjeu 1"],
   "recentSignals": [{"signal": "Description", "source": "Source", "type": "recrutement|nomination|investissement"}],
   "pains": [{"pain": "Description", "impact": "Impact business", "offer": "Ce que l'ESN propose", "urgency": "haute|moyenne|basse"}],
-  "priorityScore": 8,
-  "priorityJustification": {"urgency": {"score": 8, "justification": "..."}, "accessibility": {"score": 7, "justification": "..."}, "competition": {"score": 6, "justification": "..."}, "alignment": {"score": 9, "justification": "..."}, "potential": {"score": 7, "justification": "..."}, "overall": "Justification globale"},
+  "priorityScore": 5,
+  "priorityJustification": {"urgency": {"score": 5, "justification": "..."}, "accessibility": {"score": 5, "justification": "..."}, "competition": {"score": 5, "justification": "..."}, "alignment": {"score": 5, "justification": "..."}, "potential": {"score": 5, "justification": "..."}, "overall": "Justification détaillée en fonction du profil (taille ESN, alignement). Pas toujours 9/10."},
   "competitors": [{"name": "ESN", "perimeter": "Périmètre", "strength": "Forces", "weakness": "Faiblesses"}],
   "technologyStack": ["Tech 1"],
   "regulations": ["NIS2", "RGPD"],
@@ -364,7 +429,9 @@ Produis ce JSON :
   "rdvScript": {"opening": {"instructions": "...", "recommendedPhrase": "..."}, "positioning": {"instructions": "..."}, "exploration": {"instructions": "..."}, "proposal": {"instructions": "..."}, "closing": {"instructions": "..."}},
   "powerQuestions": [{"question": "Question contextualisée", "purpose": "Ce qu'on révèle", "timing": "début|milieu|fin"}],
   "objections": [{"objection": "Objection", "realMeaning": "Lecture réelle", "response": "Réponse", "mirrorQuestion": "Question miroir"}],
-  "linkedinSearchKeywords": {"byEntity": [{"entity": "Entité", "keywords": ["DSI", "Head of Data"]}], "generic": ["DSI", "CTO", "Achats IT"]}
+  "linkedinSearchKeywords": {"byEntity": [{"entity": "Entité", "keywords": ["DSI", "Head of Data"]}], "generic": ["DSI", "CTO", "Achats IT"]},
+  "peopleMentioned": [{"name": "Prénom Nom", "title": "Poste exact", "context": "Citation", "source": "URL ou titre"}],
+  "organigrammeLogic": {"hierarchy": "Qui est au-dessus de qui (groupe > filiales > directions)", "siblingEntities": "Filiales côte à côte (métiers différents)", "entryPoints": "Quelles entités pour quels types de ventes"}
 }`
 
   return await callClaudeAPI(systemPrompt, userPrompt, 16000, traceId, 'research')
@@ -386,25 +453,46 @@ function parseContactsResult(result: any): { contacts: any[], meta: any } {
   return { contacts: list, meta }
 }
 
-async function callClaude_Contacts(companyName: string, rawContacts: any[], research: any, onboardingData: any, apifyWorked: boolean, traceId: string): Promise<{ contacts: any[], meta: any }> {
+async function callClaude_Contacts(companyName: string, rawContacts: any[], research: any, onboardingData: any, apifyWorked: boolean, fromWebMentioned: boolean, traceId: string): Promise<{ contacts: any[], meta: any }> {
   if (!ANTHROPIC_API_KEY) { console.error(JSON.stringify({ event: 'claude2_no_key', traceId })); return { contacts: [], meta: null } }
 
   // Contexte réduit pour limiter la taille du prompt et éviter timeout (120s)
+  const profile = buildProfileContext(onboardingData)
   const entities = research.entitiesExhaustive || []
   const entitiesStr = entities.length ? JSON.stringify(entities.slice(0, 15)) : '[]'
   const anglesTitles = (research.angles || []).slice(0, 5).map((a: any) => a.title || a).filter(Boolean)
   const painsStr = JSON.stringify((research.pains || []).slice(0, 5).map((p: any) => p.pain || p).filter(Boolean))
+  const excludedPersonas = onboardingData.excludedPersonas || []
+  const geo = onboardingData.geo || []
+  const geoOnlyFranceEU = Array.isArray(geo) && geo.length > 0 && !geo.includes('International')
 
-  const systemPrompt = `Tu es BELLUM. Qualifie et enrichis des contacts B2B pour une ESN.
+  const systemPrompt = `Tu es BELLUM. Tu qualifies et enrichis des contacts B2B pour un commercial ESN. L'objectif : lui donner TOUT ce qu'il peut MOBILISER — pas seulement 2-3 C-level. Il va appeler le CEO, mais il a aussi besoin d'équipes métier, de portes d'entrée alternatives, de champions, d'opérationnels, d'achats. Chaque contact doit être PERTINENT pour son profil.
 
-ESN : ${onboardingData.esnName || 'N/A'}, Taille ${onboardingData.size || 'N/A'}, Offres ${JSON.stringify((onboardingData.offers || []).slice(0, 3))}
+PROFIL COMMERCIAL :
+- ESN : ${onboardingData.esnName || 'N/A'}, Taille : ${onboardingData.size || 'N/A'}
+- Offres : ${JSON.stringify((onboardingData.offers || []).slice(0, 3))}
+- Personas cibles : ${profile.personaFocus}
+- Zone géo : ${profile.geoFocus}
+${excludedPersonas.length ? '- Personas à NE PAS inclure : ' + JSON.stringify(excludedPersonas) : ''}
+
 Compte : ${companyName}, Secteur ${research.sector || 'N/A'}
 Entités : ${entitiesStr}
 Angles : ${JSON.stringify(anglesTitles)}
 Pains : ${painsStr}
 
-Rôles : sponsor / champion / operational / purchasing / influencer. Priorité 1-5.
-Messages : LinkedIn 300 car, Email objet 60 car + corps 150 mots, Relance 80 mots. Enjeu SPÉCIFIQUE.
+RÈGLES CONTACTS :
+- Diversité : sponsors, champions, operational, purchasing, influencer. Prioriser les personas cibles du profil.
+${geoOnlyFranceEU ? '- GÉO : privilégier contacts France / Europe uniquement.' : ''}
+
+MESSAGES — CRÉER DE L'ATTENTION (décideurs B2B sursollicités) :
+- Ton et format DIFFÉRENTS selon le niveau hiérarchique et le rôle :
+  • C-level / sponsor : très court, 1 idée forte, pas de pavé. Objet email percutant (chiffre, résultat, question ouverte). Pas "Je vous contacte pour...".
+  • Champion / directeur : contexte métier + 1 pain concret du compte + proposition courte. Objet = bénéfice ou question.
+  • Opérationnel / achats : plus détaillé, concret, preuve (ex. cas client, techno). Objet clair et actionnable.
+- LinkedIn : max 300 car. Accroche personnalisée (poste, entité, ou actualité du compte). Pas de template générique.
+- Email : objet max 60 car (chiffre, question, ou résultat). Corps max 150 mots. Une seule demande claire. Signature courte.
+- Relance : sujet RE: + nouveau angle (pas répéter le 1er message). Max 80 mots.
+- Aucun message ne doit ressembler à un envoi en masse. Chaque message doit donner l'impression d'avoir été écrit pour CE contact sur CE compte.
 
 Réponds UNIQUEMENT en JSON valide : {"contacts": [{ "name", "title", "entity", "location", "role", "priority", "summary", "whyContact", "linkedinUrl", "email", "linkedinMessage", "emailMessage", "followupMessage" }], "organigramme": [], "decisionChain": [], "uncoveredZones": []}.`
 
@@ -422,6 +510,11 @@ Réponds UNIQUEMENT en JSON valide : {"contacts": [{ "name", "title", "entity", 
     userPrompt = `Enrichis ces ${simplified.length} contacts LinkedIn pour "${companyName}". Retourne un JSON avec "contacts" (tableau d'objets avec name, title, entity, location, role, priority, summary, whyContact, linkedinUrl, email, linkedinMessage, emailMessage, followupMessage), "organigramme", "decisionChain", "uncoveredZones".
 
 ${JSON.stringify(simplified, null, 2)}`
+  } else if (fromWebMentioned && rawContacts.length > 0) {
+    const limited = rawContacts.slice(0, MAX_RAW_CONTACTS_FOR_PROMPT)
+    userPrompt = `Voici des personnes RÉELLES extraites d'articles et pages web pour "${companyName}". CONSERVE leurs noms et postes exacts. Enrichis chaque fiche : entity (filiale/BU), role, priority, summary, whyContact, linkedinMessage, emailMessage, followupMessage. linkedinUrl et email peuvent rester vides si non connus. Retourne le même format JSON : {"contacts": [...], "organigramme": [], "decisionChain": [], "uncoveredZones": []}.
+
+${JSON.stringify(limited, null, 2)}`
   } else {
     userPrompt = `Génère des contacts RÉALISTES (noms fictifs, postes/entités cohérents) pour "${companyName}".
 Entités : ${entitiesStr}
@@ -461,20 +554,24 @@ Même format JSON : {"contacts": [...], "organigramme": [], "decisionChain": [],
 // ============================================================
 async function callClaude_Plan(companyName: string, research: any, contacts: any[], onboardingData: any, traceId: string): Promise<any | null> {
   if (!ANTHROPIC_API_KEY) { console.error(JSON.stringify({ event: 'claude3_no_key', traceId })); return null }
+  const profile = buildProfileContext(onboardingData)
 
-  const systemPrompt = `Tu es BELLUM. Ta mission : produire le plan d'action commercial final.
+  const systemPrompt = `Tu es BELLUM. Ta mission : produire le plan d'action commercial FINAL, 100% ACTIONNABLE et aligné sur le profil du commercial.
 
-PROFIL ESN :
-- Taille : ${onboardingData.size || 'Non renseignée'}
+PROFIL (adapter le plan à ça) :
+- ESN : ${onboardingData.esnName || 'N/A'}, Taille : ${onboardingData.size || 'Non renseignée'}
 - Offres : ${JSON.stringify(onboardingData.offers || [])}
-- Cycle : ${onboardingData.salesCycle || 'Non renseigné'}
-- Équipe : ${onboardingData.salesTeamSize || 'Non renseigné'}
+- Cycle de vente : ${onboardingData.salesCycle || 'Non renseigné'}
+- Taille équipe commerciale : ${onboardingData.salesTeamSize || 'Non renseigné'}
 - TJM : ${onboardingData.avgTJM || 'Non renseigné'}
-- Défi : ${onboardingData.mainChallenge || 'Non renseigné'}
+- Défi principal : ${onboardingData.mainChallenge || 'Non renseigné'}
+- Zone : ${profile.geoFocus}
 
-PLAN SÉQUENCÉ : MAINTENANT (S1) → MOIS 1 → MOIS 2-3 → MOIS 3-6 → MOIS 6-12
-Chaque action : verbe + contact + canal + deadline + KPI + statut.
-Adapter la durée au cycle de vente et le volume à la taille de l'équipe.
+LIVRABLE ATTENDU :
+- Plan SÉQUENCÉ : MAINTENANT (S1) → MOIS 1 → MOIS 2-3 → MOIS 3-6 → MOIS 6-12. Chaque phase avec des actions concrètes : verbe + contact + canal + deadline + KPI.
+- Séquences prêtes à l'envoi : les messages (email, LinkedIn, relance) sont déjà dans les contacts ; le plan indique QUI contacter, QUAND, dans quel ordre.
+- Volume et durée adaptés au cycle et à la taille d'équipe (ex. 1 commercial → moins d'actions parallèles, cycle court → plan condensé).
+- evaluation : go/no-go, score, risques, quick wins — pour que le commercial sache par où commencer.
 
 Réponds UNIQUEMENT en JSON valide.`
 
@@ -583,73 +680,70 @@ async function callClaudeAPI(systemPrompt: string, userPrompt: string, maxTokens
 }
 
 // ============================================================
-// APIFY — Company Employees (Actor principal)
+// APIFY — Company Employees (sync comme n8n : 1 appel, on attend le résultat)
 // ============================================================
-async function apify_CompanyEmployees(companyName: string, keywords: any, traceId: string, braveLinkedinUrl?: string | null): Promise<any[]> {
+async function apify_CompanyEmployees(companyName: string, keywords: any, traceId: string, braveLinkedinUrl?: string | null, _onboardingData?: any): Promise<any[]> {
   if (!APIFY_API_TOKEN) return []
   console.log(JSON.stringify({ event: 'apify_employees_start', traceId, companyName }))
 
+  const keywordFilter = (keywords?.generic || ['DSI', 'CTO', 'Data', 'Cloud', 'IT', 'Digital']).join(' ')
+  const actorId = 'harvestapi~linkedin-company-employees'
+  // Ne pas envoyer locations pour maximiser les résultats (filtrage géo fait côté Claude si besoin)
+  const buildInput = (companies: string[]) => ({
+    companies,
+    searchQuery: keywordFilter || undefined,
+    maxItems: 120,
+    companyBatchMode: 'all_at_once',
+    profileScraperMode: 'Short ($4 per 1k)',
+  })
+
   try {
-    // Utiliser l'URL LinkedIn trouvée par Brave, sinon construire un slug
-    let companyUrl = braveLinkedinUrl
-    if (!companyUrl) {
+    // 1) Essayer avec l'URL LinkedIn trouvée par Brave, ou l'URL construite
+    let companies: string[] = []
+    if (braveLinkedinUrl) {
+      companies = [braveLinkedinUrl]
+    } else {
       const companySlug = companyName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
-      companyUrl = `https://www.linkedin.com/company/${companySlug}`
+      companies = [`https://www.linkedin.com/company/${companySlug}`]
     }
-    console.log(JSON.stringify({ event: 'apify_employees_url', traceId, url: companyUrl }))
+    console.log(JSON.stringify({ event: 'apify_employees_input', traceId, companies }))
 
-    // Construire les filtres de mots-clés depuis la Phase 1
-    const keywordFilter = (keywords?.generic || ['DSI', 'CTO', 'Data', 'Cloud', 'IT', 'Digital']).join(' ')
-
-    const actorId = 'harvestapi~linkedin-company-employees'
-    const runRes = await fetch(`https://api.apify.com/v2/acts/${actorId}/runs?token=${APIFY_API_TOKEN}`, {
+    const url = `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${APIFY_API_TOKEN}&timeout=180`
+    const syncRes = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        currentCompanies: [companyUrl],
-        keyword: keywordFilter,
-        count: 200,
-      }),
-      signal: AbortSignal.timeout(15000),
+      body: JSON.stringify(buildInput(companies)),
+      signal: AbortSignal.timeout(200000),
     })
 
-    if (!runRes.ok) {
-      const errText = await runRes.text()
-      console.error(JSON.stringify({ event: 'apify_employees_run_error', traceId, status: runRes.status, body: errText.slice(0, 300) }))
-      return []
+    let items: any[] = []
+    const raw = await syncRes.json().catch(() => null)
+    if (syncRes.ok && raw !== null) {
+      items = Array.isArray(raw) ? raw : (Array.isArray((raw as any)?.items) ? (raw as any).items : [])
+    } else {
+      console.log(JSON.stringify({ event: 'apify_employees_sync_response', traceId, status: syncRes.status, body: typeof raw === 'object' ? JSON.stringify(raw).slice(0, 400) : String(raw).slice(0, 400) }))
     }
 
-    const runData = await runRes.json()
-    const runId = runData?.data?.id
-    if (!runId) {
-      console.error(JSON.stringify({ event: 'apify_employees_no_run_id', traceId, response: JSON.stringify(runData).slice(0, 300) }))
-      return []
+    if (items.length > 0) {
+      console.log(JSON.stringify({ event: 'apify_employees_done', traceId, count: items.length, source: 'sync' }))
+      return items
     }
 
-    // Polling : attendre que le run finisse
-    let status = 'RUNNING'
-    let attempts = 0
-    while (status === 'RUNNING' && attempts < 40) {
-      await new Promise(r => setTimeout(r, 3000))
-      try {
-        const statusRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${APIFY_API_TOKEN}`, { signal: AbortSignal.timeout(5000) })
-        const statusData = await statusRes.json()
-        status = statusData?.data?.status || 'FAILED'
-      } catch { status = 'FAILED' }
-      attempts++
+    // 2) Fallback : envoyer le NOM de l'entreprise (l'actor accepte "company names, it will try to find the company")
+    console.log(JSON.stringify({ event: 'apify_employees_fallback_name', traceId, companyName }))
+    const syncRes2 = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildInput([companyName])),
+      signal: AbortSignal.timeout(200000),
+    })
+    const raw2 = await syncRes2.json().catch(() => null)
+    if (syncRes2.ok && raw2 !== null) {
+      const items2 = Array.isArray(raw2) ? raw2 : (Array.isArray((raw2 as any)?.items) ? (raw2 as any).items : [])
+      console.log(JSON.stringify({ event: 'apify_employees_done', traceId, count: items2.length, source: 'sync_fallback_name' }))
+      return items2
     }
-
-    if (status !== 'SUCCEEDED') {
-      console.log(JSON.stringify({ event: 'apify_employees_status', traceId, status, attempts }))
-      return []
-    }
-
-    // Récupérer les résultats (API renvoie un tableau ou { items: [] })
-    const dataRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${APIFY_API_TOKEN}`, { signal: AbortSignal.timeout(15000) })
-    const raw = await dataRes.json()
-    const items = Array.isArray(raw) ? raw : (Array.isArray((raw as any)?.items) ? (raw as any).items : [])
-    console.log(JSON.stringify({ event: 'apify_employees_done', traceId, count: items.length, rawIsArray: Array.isArray(raw) }))
-    return items
+    return []
   } catch (err) {
     console.error(JSON.stringify({ event: 'apify_employees_error', traceId, error: (err as Error).message }))
     return []
@@ -659,12 +753,11 @@ async function apify_CompanyEmployees(companyName: string, keywords: any, traceI
 // ============================================================
 // APIFY — Profile Search (Actor complémentaire)
 // ============================================================
-async function apify_ProfileSearch(companyName: string, keywords: any, traceId: string): Promise<any[]> {
+async function apify_ProfileSearch(companyName: string, keywords: any, traceId: string, _onboardingData?: any): Promise<any[]> {
   if (!APIFY_API_TOKEN) return []
   console.log(JSON.stringify({ event: 'apify_search_start', traceId }))
 
   try {
-    // Construire la requête de recherche
     const searchQuery = `${companyName} ${(keywords?.generic || ['DSI', 'CTO']).slice(0, 3).join(' ')}`
 
     const actorId = 'harvestapi~linkedin-profile-search'
@@ -672,8 +765,8 @@ async function apify_ProfileSearch(companyName: string, keywords: any, traceId: 
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        searchQuery: searchQuery,
-        maxProfiles: 50,
+        searchQuery,
+        maxItems: 50,
       }),
       signal: AbortSignal.timeout(15000),
     })
