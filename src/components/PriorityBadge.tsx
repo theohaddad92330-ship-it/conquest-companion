@@ -18,8 +18,10 @@ export function PriorityBadge({ score, size = "md" }: PriorityBadgeProps) {
     lg: "h-12 w-12 text-lg",
   };
 
+  const label = score >= 8 ? "Priorité haute (à contacter en premier)" : score >= 5 ? "Priorité moyenne" : "Priorité basse";
   return (
     <div
+      title={label}
       className={cn(
         "inline-flex items-center justify-center rounded-lg border font-mono font-bold transition-transform duration-200 hover:scale-110",
         getColor(),

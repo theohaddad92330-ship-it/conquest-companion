@@ -223,7 +223,8 @@ export default function SearchPage() {
               <AlertTriangle className="h-8 w-8 text-destructive mx-auto" />
               <p className="text-sm font-medium text-destructive">L&apos;analyse a échoué</p>
               <p className="text-xs text-muted-foreground">{analysis.error || "Erreur inconnue. Veuillez réessayer."}</p>
-              <Button variant="outline" size="sm" onClick={() => { setBannerDismissed(false); resetState(); }}>
+              <p className="text-xs text-muted-foreground/80 pt-1 border-t border-border mt-3">Conseil : vérifiez le nom de l&apos;entreprise (orthographe, nom officiel) ou réessayez dans quelques instants.</p>
+              <Button variant="outline" size="sm" className="mt-4" onClick={() => { setBannerDismissed(false); resetState(); }}>
                 Nouvelle recherche
               </Button>
             </CardContent>

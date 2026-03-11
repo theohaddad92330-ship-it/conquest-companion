@@ -138,8 +138,9 @@ function TabFiche({ account }: { account: AccountAnalysis }) {
       <Card className="border-border card-neutral rounded-xl">
         <CardContent className="p-6 space-y-3">
           <h3 className="font-display text-sm font-semibold flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-muted-foreground" />Enjeux IT identifiés
+            <AlertTriangle className="h-4 w-4 text-muted-foreground" />Ce qui motive leurs projets IT
           </h3>
+          <p className="text-xs text-muted-foreground">Enjeux et priorités identifiés pour ce compte — à réutiliser dans vos échanges.</p>
           <ul className="space-y-2">
             {(account.it_challenges || []).map((c) => (
               <li key={c} className="flex items-start gap-2 text-sm">
@@ -156,8 +157,9 @@ function TabFiche({ account }: { account: AccountAnalysis }) {
       <Card className="border-border card-neutral rounded-xl">
         <CardContent className="p-6 space-y-3">
           <h3 className="font-display text-sm font-semibold flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />🔔 Signaux récents
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />Actualités et signaux d&apos;achat
           </h3>
+          <p className="text-xs text-muted-foreground">Nominations, recrutements, investissements — opportunités pour engager la conversation.</p>
           <div className="space-y-2">
             {(account.recent_signals || []).map((s: unknown, i: number) => {
               const icons = ["📰", "💼", "📢", "🔄", "📊"];
@@ -177,8 +179,9 @@ function TabFiche({ account }: { account: AccountAnalysis }) {
 
       <Card className="border-border card-neutral rounded-xl">
         <CardContent className="p-6">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Score de priorité : {account.priority_score}/10</p>
-          <p className="text-sm text-foreground/80">&ldquo;{typeof account.priority_justification === "string" ? account.priority_justification : (account.priority_justification as { overall?: string } | null)?.overall ?? "—"}&rdquo;</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">Score de priorité : {account.priority_score}/10</p>
+          <p className="text-xs text-muted-foreground mb-2">Ce que signifie ce score pour vous — à lire avant de prioriser vos actions.</p>
+          <p className="text-sm text-foreground/90">&ldquo;{typeof account.priority_justification === "string" ? account.priority_justification : (account.priority_justification as { overall?: string } | null)?.overall ?? "—"}&rdquo;</p>
         </CardContent>
       </Card>
     </div>
@@ -259,7 +262,7 @@ function TabContacts({ contacts, companyName }: { contacts: Contact[]; companyNa
               <TableHead className="text-xs min-w-[120px]">Nom</TableHead>
               <TableHead className="text-xs min-w-[160px]">Poste</TableHead>
               <TableHead className="text-xs min-w-[140px]">Entité</TableHead>
-              <TableHead className="text-xs min-w-[100px] whitespace-nowrap">Rôle</TableHead>
+              <TableHead className="text-xs min-w-[100px] whitespace-nowrap" title="Rôle dans la décision : sponsor, champion, opérationnel, achats, influenceur">Rôle</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -467,8 +470,11 @@ function TabOrganigramme({ account, contacts }: { account: AccountAnalysis; cont
           </CardContent>
         </Card>
       )}
-      <p className="text-xs text-muted-foreground">
-        Entités du groupe et contacts identifiés par entité. Les zones sans contact sont signalées.
+      <p className="text-xs text-muted-foreground mb-1">
+        Entités du groupe et contacts identifiés par entité.
+      </p>
+      <p className="text-xs text-muted-foreground/80 mb-4">
+        <span className="inline-block w-3 h-3 rounded border-2 border-border bg-card align-middle mr-1" /> Au moins un contact identifié · <span className="inline-block w-3 h-3 rounded border-2 border-dashed border-muted-foreground/50 bg-muted/30 align-middle mr-1" /> Zone non couverte
       </p>
       <div className="relative">
         {/* Niveau 0 : entreprise */}
@@ -523,7 +529,13 @@ function TabOrganigramme({ account, contacts }: { account: AccountAnalysis; cont
 function TabOuvrirCompte({ raw }: { raw: unknown }) {
   const data = raw && typeof raw === "object" && "commentOuvrirCompte" in raw ? (raw as { commentOuvrirCompte?: unknown }).commentOuvrirCompte : null;
   const d = data && typeof data === "object" ? data as { strategy?: unknown; entryPoints?: unknown[] } : null;
-  if (!d) return <p className="text-sm text-muted-foreground">Aucune donnée disponible. Relancez une analyse pour générer cette section.</p>;
+  if (!d) return (
+    <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-center">
+      <p className="text-sm text-muted-foreground">Aucune donnée disponible pour cet onglet.</p>
+      <p className="text-xs text-muted-foreground mt-1">Relancez une analyse pour générer la stratégie d&apos;entrée et les portes d&apos;entrée.</p>
+      <Button variant="outline" size="sm" className="mt-4" onClick={() => window.location.href = "/search"}>Nouvelle recherche</Button>
+    </div>
+  );
   const entryPoints = Array.isArray(d.entryPoints) ? d.entryPoints : [];
   return (
     <div className="space-y-6">
@@ -556,7 +568,12 @@ function TabOffresConstruire({ raw }: { raw: unknown }) {
   const data = raw && typeof raw === "object" && "offresAConstruire" in raw ? (raw as { offresAConstruire?: unknown }).offresAConstruire : null;
   const offres = data && typeof data === "object" && "offers" in data ? (data as { offers?: unknown[] }).offers : null;
   const offers = Array.isArray(offres) ? offres : [];
-  if (offers.length === 0) return <p className="text-sm text-muted-foreground">Aucune donnée disponible ou aucune offre recommandée.</p>;
+  if (offers.length === 0) return (
+    <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-center">
+      <p className="text-sm text-muted-foreground">Aucune offre recommandée pour ce compte.</p>
+      <p className="text-xs text-muted-foreground mt-1">Une analyse plus poussée peut faire apparaître des offres ESN à proposer.</p>
+    </div>
+  );
   return (
     <div className="space-y-4">
       <Card className="border-border card-neutral rounded-xl">
@@ -581,8 +598,21 @@ function TabOffresConstruire({ raw }: { raw: unknown }) {
 function TabPlanHebdo({ raw }: { raw: unknown }) {
   const data = raw && typeof raw === "object" && "planHebdomadaire" in raw ? (raw as { planHebdomadaire?: unknown }).planHebdomadaire : null;
   const d = data && typeof data === "object" ? data as { methodology?: unknown; weeks?: unknown[] } : null;
-  if (!d) return <p className="text-sm text-muted-foreground">Aucune donnée disponible. Relancez une analyse pour générer cette section.</p>;
+  if (!d) return (
+    <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-center">
+      <p className="text-sm text-muted-foreground">Aucune donnée disponible pour cet onglet.</p>
+      <p className="text-xs text-muted-foreground mt-1">Relancez une analyse pour générer le plan hebdomadaire.</p>
+      <Button variant="outline" size="sm" className="mt-4" onClick={() => window.location.href = "/search"}>Nouvelle recherche</Button>
+    </div>
+  );
   const weeks = Array.isArray(d.weeks) ? d.weeks : [];
+  if (weeks.length === 0 && !d.methodology) return (
+    <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-center">
+      <p className="text-sm text-muted-foreground">Aucun plan hebdomadaire pour ce compte.</p>
+      <p className="text-xs text-muted-foreground mt-1">Relancez une analyse pour générer un plan par semaine.</p>
+      <Button variant="outline" size="sm" className="mt-4" onClick={() => window.location.href = "/search"}>Nouvelle recherche</Button>
+    </div>
+  );
   return (
     <div className="space-y-6">
       {d.methodology != null && (
@@ -610,7 +640,13 @@ function TabPlanHebdo({ raw }: { raw: unknown }) {
 function TabEvaluation({ raw }: { raw: unknown }) {
   const data = raw && typeof raw === "object" && "evaluationCompte" in raw ? (raw as { evaluationCompte?: unknown }).evaluationCompte : null;
   const d = data && typeof data === "object" ? data as { goNoGo?: unknown; scoreGlobal?: unknown; justification?: unknown; recommandation?: unknown } : null;
-  if (!d) return <p className="text-sm text-muted-foreground">Aucune donnée disponible. Relancez une analyse pour générer cette section.</p>;
+  if (!d) return (
+    <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-center">
+      <p className="text-sm text-muted-foreground">Aucune évaluation pour ce compte.</p>
+      <p className="text-xs text-muted-foreground mt-1">Relancez une analyse pour obtenir un GO/NO-GO et une justification.</p>
+      <Button variant="outline" size="sm" className="mt-4" onClick={() => window.location.href = "/search"}>Nouvelle recherche</Button>
+    </div>
+  );
   const goNoGo = String(safeString(d.goNoGo)).toUpperCase();
   const isGo = goNoGo === "GO";
   return (
@@ -754,9 +790,9 @@ function TabMessages({ contacts }: { contacts: Contact[] }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">Messages prêts à envoyer</p>
-        <CopyButton text="Tout copier" />
+      <div>
+        <p className="text-sm font-medium text-foreground">Messages prêts à envoyer</p>
+        <p className="text-xs text-muted-foreground mt-0.5">Cliquez sur l&apos;icône copier à côté de chaque message, ou sur Gmail pour ouvrir directement.</p>
       </div>
 
       <div className="flex gap-2">
@@ -956,7 +992,7 @@ export default function AccountDetail() {
               )}
             </div>
             <Button
-              variant="outline"
+              variant="default"
               size="sm"
               onClick={() => {
                 if (contacts.length === 0) {
@@ -970,7 +1006,7 @@ export default function AccountDetail() {
                 toast({ title: "Export réussi", description: `${contacts.length} contacts exportés dans ${filename}` });
               }}
             >
-              <Download className="h-3.5 w-3.5 mr-1.5" />CSV
+              <Download className="h-3.5 w-3.5 mr-1.5" />Télécharger CSV
             </Button>
             <Button
               variant="outline"
@@ -989,7 +1025,7 @@ export default function AccountDetail() {
                 });
               }}
             >
-              <FileSpreadsheet className="h-3.5 w-3.5 mr-1.5" />Sheets
+              <FileSpreadsheet className="h-3.5 w-3.5 mr-1.5" />Ouvrir dans Sheets
             </Button>
           </div>
         </div>

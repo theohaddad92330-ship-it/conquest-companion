@@ -317,6 +317,10 @@ export default function Contacts() {
         {/* Contacts table */}
         {hasContacts && (
           <motion.div variants={fadeUp} className="space-y-4">
+            <div className="rounded-lg border border-border bg-muted/30 px-4 py-2.5 flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-muted-foreground shrink-0" />
+              <p className="text-xs text-muted-foreground">Importez votre propre fichier CSV pour compléter ou remplacer cette liste par vos contacts réels. Ils seront utilisés pour enrichir vos analyses de comptes.</p>
+            </div>
             {/* Filters bar */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
               <div className="relative flex-1 w-full">

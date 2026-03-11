@@ -215,7 +215,7 @@ export default function Dashboard() {
         <motion.div variants={fadeUp} className="header-premium mb-6 flex items-center justify-between rounded-xl px-5 py-4">
           <div>
             <h1 className="font-display text-2xl font-bold">Bonjour{firstName ? ` ${firstName}` : ""} 👋</h1>
-            <p className="text-sm text-foreground/50 mt-1">Voici un résumé de votre activité commerciale</p>
+            <p className="text-sm text-foreground/50 mt-1">Vos comptes prêts à prospecter et votre activité en un coup d&apos;œil</p>
           </div>
           <Badge variant="secondary" className="gap-1.5 px-3 py-1.5 border border-border bg-muted text-muted-foreground text-xs font-medium">
             <Sparkles className="h-3 w-3" />
@@ -291,7 +291,7 @@ export default function Dashboard() {
                 <p className="text-xs text-foreground/40 mt-1.5">Renouvellement le 1er du mois prochain</p>
               </div>
               <Button variant="outline" size="sm" onClick={() => navigate("/billing")} className="shrink-0">
-                Gérer
+                Voir mon plan
               </Button>
             </CardContent>
           </Card>
@@ -303,10 +303,11 @@ export default function Dashboard() {
             {/* Activity trend */}
             <Card className="border-border card-neutral rounded-xl">
               <CardContent className="p-6">
-                <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4 text-primary" />
+                <h3 className="text-sm font-semibold mb-1 flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
                   Évolution sur 6 semaines
                 </h3>
+                <p className="text-xs text-muted-foreground mb-4">Comptes analysés et contacts identifiés par semaine</p>
                 <div className="h-44">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={trendData}>
@@ -332,10 +333,11 @@ export default function Dashboard() {
             {/* Weekly activity */}
             <Card className="border-border card-neutral rounded-xl">
               <CardContent className="p-6">
-                <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                  <BarChart3 className="h-4 w-4 text-primary" />
+                <h3 className="text-sm font-semibold mb-1 flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4 text-muted-foreground" />
                   Activité cette semaine
                 </h3>
+                <p className="text-xs text-muted-foreground mb-4">Nouvelles analyses par jour</p>
                 <div className="h-44">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={weeklyData}>
@@ -360,10 +362,10 @@ export default function Dashboard() {
             <>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold flex items-center gap-2">
-                  <Building2 className="h-4 w-4 text-primary" />
+                  <Building2 className="h-4 w-4 text-muted-foreground" />
                   Comptes récents
                 </h3>
-                <Button variant="ghost" size="sm" className="text-xs text-primary" onClick={() => navigate("/accounts")}>
+                <Button variant="ghost" size="sm" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => navigate("/accounts")}>
                   Voir tout <ArrowRight className="h-3 w-3 ml-1" />
                 </Button>
               </div>
@@ -416,10 +418,11 @@ export default function Dashboard() {
           <motion.div variants={fadeUp} className="grid md:grid-cols-2 gap-4 mt-6">
             <Card className="border-border card-neutral rounded-xl">
               <CardContent className="p-6">
-                <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                  <Target className="h-4 w-4 text-primary" />
+                <h3 className="text-sm font-semibold mb-1 flex items-center gap-2">
+                  <Target className="h-4 w-4 text-muted-foreground" />
                   Top secteurs
                 </h3>
+                <p className="text-xs text-muted-foreground mb-4">Répartition de vos comptes analysés par secteur</p>
                 <div className="space-y-3">
                   {sectorData.map((s) => (
                     <div key={s.name} className="space-y-1.5">
@@ -438,10 +441,11 @@ export default function Dashboard() {
 
             <Card className="border-border card-neutral rounded-xl">
               <CardContent className="p-6">
-                <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                  <BarChart3 className="h-4 w-4 text-primary" />
+                <h3 className="text-sm font-semibold mb-1 flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4 text-muted-foreground" />
                   Répartition des scores
                 </h3>
+                <p className="text-xs text-muted-foreground mb-4">8–10 = priorité haute · 5–7 = moyenne · 1–4 = priorité basse</p>
                 <div className="h-40 flex items-center justify-center">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>

@@ -103,8 +103,14 @@ export default function KnowledgeBase() {
       </Card>
 
       <div className="space-y-3">
-        <h3 className="text-sm font-semibold">{documents.length} document(s) dans la base</h3>
-        {documents.map((doc: { id: string; title: string; category: string; created_at: string }) => (
+        <h3 className="text-sm font-semibold">{documents.length} document{documents.length !== 1 ? "s" : ""} dans la base</h3>
+        {documents.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border bg-muted/20 p-8 text-center">
+            <p className="text-sm text-muted-foreground">Aucun document pour l&apos;instant.</p>
+            <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">Ajoutez une méthodologie, un template de message ou des angles par secteur : l&apos;IA s&apos;en servira pour personnaliser vos analyses et vos messages.</p>
+            <p className="text-xs text-muted-foreground mt-3">Utilisez le formulaire ci-dessus pour ajouter votre premier document.</p>
+          </div>
+        ) : documents.map((doc: { id: string; title: string; category: string; created_at: string }) => (
           <Card key={doc.id} className="border-border">
             <CardContent className="p-4 flex items-center justify-between">
               <div className="flex items-center gap-3">

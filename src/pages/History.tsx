@@ -32,7 +32,7 @@ export default function History() {
           <Clock className="h-5 w-5 text-primary" />
           <h1 className="font-display text-xl font-bold">Historique</h1>
         </div>
-        <p className="text-sm text-muted-foreground">{sorted.length} recherches effectuées</p>
+        <p className="text-sm text-muted-foreground">{sorted.length} compte{sorted.length > 1 ? "s" : ""} analysé{sorted.length > 1 ? "s" : ""}</p>
       </motion.div>
 
       <motion.div initial="hidden" animate="visible" variants={fadeUp} transition={{ delay: 0.1 }}>

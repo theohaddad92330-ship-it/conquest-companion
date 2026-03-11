@@ -27,10 +27,11 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex min-h-[40vh] flex-col items-center justify-center gap-4 p-8 text-center">
+        <div className="flex min-h-[40vh] flex-col items-center justify-center gap-4 p-8 text-center max-w-md mx-auto">
           <p className="text-sm font-medium text-destructive">
-            {this.props.fallbackMessage ?? "Erreur d'affichage — rechargez la page"}
+            {this.props.fallbackMessage ?? "Une erreur inattendue s'est produite"}
           </p>
+          <p className="text-xs text-muted-foreground">Rechargez la page. Si le problème continue, contactez le support.</p>
           <Button
             variant="outline"
             size="sm"

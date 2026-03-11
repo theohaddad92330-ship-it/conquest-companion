@@ -134,10 +134,13 @@ export default function Profile() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
-      <motion.div initial="hidden" animate="visible" variants={fadeUp} className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Settings className="h-5 w-5 text-primary" />
-          <h1 className="font-display text-xl font-bold">Mon profil ESN</h1>
+      <motion.div initial="hidden" animate="visible" variants={fadeUp} className="mb-6 flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <Settings className="h-5 w-5 text-muted-foreground" />
+            <h1 className="font-display text-xl font-bold">Mon profil ESN</h1>
+          </div>
+          <p className="text-sm text-muted-foreground mt-1">Plus votre profil est complet, plus les plans de compte et les messages sont pertinents.</p>
         </div>
         <Button size="sm" onClick={handleSave} disabled={saving}>
           {saving ? "Enregistrement..." : "Enregistrer"}
