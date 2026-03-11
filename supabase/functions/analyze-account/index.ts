@@ -134,10 +134,11 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
         }
       }
 
-      // Dédupliquer par LinkedIn URL
+      // Dédupliquer par LinkedIn URL ou nom
       const seen = new Set<string>()
       rawContacts = rawContacts.filter((c: any) => {
-        const key = (c.linkedinUrl || c.url || c.firstName + c.lastName).toLowerCase()
+        const name = `${c.firstName || ''} ${c.lastName || ''}`.trim() || c.fullName || c.name || ''
+        const key = (c.linkedinUrl || c.url || name || `idx-${seen.size}`).toLowerCase()
         if (seen.has(key)) return false
         seen.add(key)
         return true
@@ -151,6 +152,7 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
     // ════════════════════════════════════════
     // PHASE 3 — ENRICHISSEMENT CONTACTS
     // ════════════════════════════════════════
+    console.log(JSON.stringify({ event: 'phase3_start', traceId, rawContactsCount: rawContacts.length, apifyWorked }))
     const enrichResult = await callClaude_Contacts(companyName, rawContacts, research, onboardingData, apifyWorked, traceId)
     const enrichedContacts = enrichResult.contacts
     const contactsMeta = enrichResult.meta
@@ -371,79 +373,87 @@ Produis ce JSON :
 // ============================================================
 // CLAUDE APPEL 2 — BELLUM-CONTACTS
 // ============================================================
-async function callClaude_Contacts(companyName: string, rawContacts: any[], research: any, onboardingData: any, apifyWorked: boolean, traceId: string): Promise<{ contacts: any[], meta: any }> {
-  if (!ANTHROPIC_API_KEY) { console.error(JSON.stringify({ event: 'claude2_no_key', traceId })); return { contacts: [], meta: null } }
+const MAX_RAW_CONTACTS_FOR_PROMPT = 35
 
-  const systemPrompt = `Tu es BELLUM. Ta mission : qualifier et enrichir des contacts pour la prospection B2B.
-
-PROFIL ESN :
-- Nom : ${onboardingData.esnName || 'Non renseigné'}
-- Taille : ${onboardingData.size || 'Non renseignée'}
-- Offres : ${JSON.stringify(onboardingData.offers || [])}
-- Personas cibles : ${JSON.stringify(onboardingData.personas || [])}
-- Personas à exclure : ${JSON.stringify(onboardingData.excludedPersonas || [])}
-- TJM : ${onboardingData.avgTJM || 'Non renseigné'}
-
-COMPTE : ${companyName}
-- Secteur : ${research.sector}
-- Enjeux : ${JSON.stringify(research.itChallenges || [])}
-- Pains : ${JSON.stringify((research.pains || []).map((p: any) => p.pain || p))}
-- Angles : ${JSON.stringify((research.angles || []).map((a: any) => a.title))}
-- Entités : ${JSON.stringify(research.entitiesExhaustive || [])}
-
-CLASSIFICATION : sponsor (C-level) / champion (Head of, Director) / operational (Chef de projet, Tech Lead) / purchasing (Achats) / influencer (Expert, RSSI)
-PRIORITÉ : Si ESN petite → opérationnels en P1, sponsors en P3. Si ESN grande → sponsors en P1.
-EXCLURE : personas exclus, stagiaires, alternants.
-MESSAGES : LinkedIn max 300 car, Email objet 60 car + corps 150 mots, Relance 80 mots. Mentionner un enjeu SPÉCIFIQUE.
-
-Réponds UNIQUEMENT en JSON valide.`
-
-  let userPrompt: string
-  if (apifyWorked && rawContacts.length > 0) {
-    const simplified = rawContacts.map(c => ({
-      name: `${c.firstName || ''} ${c.lastName || ''}`.trim() || c.fullName || c.name,
-      title: c.headline || c.title || c.currentPosition?.[0]?.position,
-      company: c.currentPosition?.[0]?.companyName || companyName,
-      linkedin: c.linkedinUrl || c.url,
-      about: (c.about || '').slice(0, 200),
-      location: c.location?.linkedinText || c.location?.parsed?.city || '',
-    }))
-    userPrompt = `Voici ${simplified.length} contacts LinkedIn RÉELS scrappés pour "${companyName}" :
-${JSON.stringify(simplified, null, 2)}
-
-Enrichis CHAQUE contact. Retourne un JSON :
-{"contacts": [{
-  "name": "Prénom Nom", "title": "Poste", "entity": "Entité/BU", "location": "Ville",
-  "role": "sponsor|champion|operational|purchasing|influencer", "priority": 1,
-  "summary": "Pourquoi important (2 phrases)", "whyContact": "Raison spécifique",
-  "linkedinUrl": "URL", "email": "format prenom.nom@domaine",
-  "linkedinMessage": "Message max 300 car", "emailMessage": {"subject": "Max 60 car", "body": "Max 150 mots"},
-  "followupMessage": {"subject": "RE: ...", "body": "Max 80 mots"}
-}], "organigramme": [{"entity": "Entité", "contacts": ["Nom"], "uncovered": false}],
-"decisionChain": [{"step": "SPONSOR", "contacts": ["Nom"], "role": "Description"}],
-"uncoveredZones": ["Entité sans contact"]}`
-  } else {
-    userPrompt = `Apify n'a pas trouvé de contacts LinkedIn pour "${companyName}".
-Génère des contacts RÉALISTES (noms fictifs, postes et entités réels) pour CHAQUE entité :
-Entités : ${JSON.stringify(research.entitiesExhaustive || [])}
-
-Pour chaque entité : 1 décideur, 1 champion, 1 opérationnel minimum.
-Couvre aussi : Achats IT, Sécurité, Data, Cloud selon les offres ESN.
-Indique "profils types suggérés" dans le summary.
-
-Même format JSON que ci-dessus.`
-  }
-
-  const result = await callClaudeAPI(systemPrompt, userPrompt, 12000, traceId, 'contacts')
-  if (!result) return { contacts: [], meta: null }
-
-  const contacts = result.contacts || (Array.isArray(result) ? result : [])
-  const meta = (result.organigramme || result.decisionChain) ? {
+function parseContactsResult(result: any): { contacts: any[], meta: any } {
+  const contacts = result?.contacts ?? result?.Contacts ?? (Array.isArray(result) ? result : [])
+  const list = Array.isArray(contacts) ? contacts : []
+  const meta = (result?.organigramme || result?.decisionChain) ? {
     organigramme: result.organigramme,
     decisionChain: result.decisionChain,
     uncoveredZones: result.uncoveredZones,
   } : null
-  return { contacts, meta }
+  return { contacts: list, meta }
+}
+
+async function callClaude_Contacts(companyName: string, rawContacts: any[], research: any, onboardingData: any, apifyWorked: boolean, traceId: string): Promise<{ contacts: any[], meta: any }> {
+  if (!ANTHROPIC_API_KEY) { console.error(JSON.stringify({ event: 'claude2_no_key', traceId })); return { contacts: [], meta: null } }
+
+  // Contexte réduit pour limiter la taille du prompt et éviter timeout (120s)
+  const entities = research.entitiesExhaustive || []
+  const entitiesStr = entities.length ? JSON.stringify(entities.slice(0, 15)) : '[]'
+  const anglesTitles = (research.angles || []).slice(0, 5).map((a: any) => a.title || a).filter(Boolean)
+  const painsStr = JSON.stringify((research.pains || []).slice(0, 5).map((p: any) => p.pain || p).filter(Boolean))
+
+  const systemPrompt = `Tu es BELLUM. Qualifie et enrichis des contacts B2B pour une ESN.
+
+ESN : ${onboardingData.esnName || 'N/A'}, Taille ${onboardingData.size || 'N/A'}, Offres ${JSON.stringify((onboardingData.offers || []).slice(0, 3))}
+Compte : ${companyName}, Secteur ${research.sector || 'N/A'}
+Entités : ${entitiesStr}
+Angles : ${JSON.stringify(anglesTitles)}
+Pains : ${painsStr}
+
+Rôles : sponsor / champion / operational / purchasing / influencer. Priorité 1-5.
+Messages : LinkedIn 300 car, Email objet 60 car + corps 150 mots, Relance 80 mots. Enjeu SPÉCIFIQUE.
+
+Réponds UNIQUEMENT en JSON valide : {"contacts": [{ "name", "title", "entity", "location", "role", "priority", "summary", "whyContact", "linkedinUrl", "email", "linkedinMessage", "emailMessage", "followupMessage" }], "organigramme": [], "decisionChain": [], "uncoveredZones": []}.`
+
+  let userPrompt: string
+  if (apifyWorked && rawContacts.length > 0) {
+    const limited = rawContacts.slice(0, MAX_RAW_CONTACTS_FOR_PROMPT)
+    const simplified = limited.map((c: any) => ({
+      name: `${c.firstName || ''} ${c.lastName || ''}`.trim() || c.fullName || c.name,
+      title: c.headline || c.title || c.currentPosition?.[0]?.position,
+      company: c.currentPosition?.[0]?.companyName || companyName,
+      linkedin: c.linkedinUrl || c.url,
+      about: String(c.about || '').slice(0, 200),
+      location: c.location?.linkedinText || c.location?.parsed?.city || '',
+    }))
+    userPrompt = `Enrichis ces ${simplified.length} contacts LinkedIn pour "${companyName}". Retourne un JSON avec "contacts" (tableau d'objets avec name, title, entity, location, role, priority, summary, whyContact, linkedinUrl, email, linkedinMessage, emailMessage, followupMessage), "organigramme", "decisionChain", "uncoveredZones".
+
+${JSON.stringify(simplified, null, 2)}`
+  } else {
+    userPrompt = `Génère des contacts RÉALISTES (noms fictifs, postes/entités cohérents) pour "${companyName}".
+Entités : ${entitiesStr}
+Pour chaque entité : 1 décideur, 1 champion, 1 opérationnel min. + Achats IT, Sécurité, Data si pertinent.
+Summary : "profil type suggéré" si fictif.
+Même format JSON : {"contacts": [...], "organigramme": [], "decisionChain": [], "uncoveredZones": []}.`
+  }
+
+  let result = await callClaudeAPI(systemPrompt, userPrompt, 12000, traceId, 'contacts')
+  if (result) {
+    const parsed = parseContactsResult(result)
+    if (parsed.contacts.length > 0) {
+      console.log(JSON.stringify({ event: 'claude_contacts_ok', traceId, count: parsed.contacts.length }))
+      return parsed
+    }
+  }
+
+  // Retry avec prompt minimal pour garantir au moins quelques contacts
+  console.log(JSON.stringify({ event: 'claude_contacts_retry', traceId, reason: result ? 'empty_list' : 'null_response' }))
+  const fallbackSystem = `Tu es BELLUM. Génère des contacts B2B en JSON uniquement. Format : {"contacts": [{"name":"Prénom Nom","title":"Poste","entity":"Entité","role":"champion","priority":3,"summary":"...","whyContact":"...","linkedinUrl":"","email":"prenom.nom@domaine","linkedinMessage":"...","emailMessage":{"subject":"...","body":"..."},"followupMessage":{"subject":"RE:...","body":"..."}}]}. Pas de texte avant/après.`
+  const fallbackUser = `Génère 12 à 18 contacts pour "${companyName}". Secteur: ${research.sector || 'N/A'}. Entités: ${entitiesStr}. Noms fictifs, postes réalistes.`
+  const retryResult = await callClaudeAPI(fallbackSystem, fallbackUser, 8000, traceId, 'contacts_retry')
+  if (retryResult) {
+    const parsed = parseContactsResult(retryResult)
+    if (parsed.contacts.length > 0) {
+      console.log(JSON.stringify({ event: 'claude_contacts_retry_ok', traceId, count: parsed.contacts.length }))
+      return parsed
+    }
+  }
+
+  console.error(JSON.stringify({ event: 'claude_contacts_failed', traceId }))
+  return { contacts: [], meta: null }
 }
 
 // ============================================================
@@ -533,8 +543,35 @@ async function callClaudeAPI(systemPrompt: string, userPrompt: string, maxTokens
     console.log(JSON.stringify({ event: `claude_${phase}_raw`, traceId, len: text.length, preview: text.slice(0, 150) }))
     const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
 
+    // Extraction robuste : si du texte entoure le JSON, extraire l'objet ou le tableau
+    function extractJson(s: string): any {
+      const trimmed = s.trim()
+      const firstBrace = trimmed.indexOf('{')
+      const firstBracket = trimmed.indexOf('[')
+      if (firstBracket >= 0 && (firstBrace < 0 || firstBracket < firstBrace)) {
+        const lastBracket = trimmed.lastIndexOf(']')
+        if (lastBracket > firstBracket) {
+          const candidate = trimmed.slice(firstBracket, lastBracket + 1)
+          return JSON.parse(candidate)
+        }
+      }
+      if (firstBrace >= 0) {
+        let depth = 0
+        let end = -1
+        for (let i = firstBrace; i < trimmed.length; i++) {
+          if (trimmed[i] === '{') depth++
+          else if (trimmed[i] === '}') { depth--; if (depth === 0) { end = i; break } }
+        }
+        if (end > firstBrace) {
+          const candidate = trimmed.slice(firstBrace, end + 1)
+          return JSON.parse(candidate)
+        }
+      }
+      return JSON.parse(trimmed)
+    }
+
     try {
-      return JSON.parse(clean)
+      return extractJson(clean)
     } catch (parseErr) {
       console.error(JSON.stringify({ event: `claude_${phase}_parse_error`, traceId, first300: clean.slice(0, 300), last200: clean.slice(-200) }))
       return null
@@ -607,11 +644,12 @@ async function apify_CompanyEmployees(companyName: string, keywords: any, traceI
       return []
     }
 
-    // Récupérer les résultats
+    // Récupérer les résultats (API renvoie un tableau ou { items: [] })
     const dataRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${APIFY_API_TOKEN}`, { signal: AbortSignal.timeout(15000) })
-    const items = await dataRes.json()
-    console.log(JSON.stringify({ event: 'apify_employees_done', traceId, count: Array.isArray(items) ? items.length : 0 }))
-    return Array.isArray(items) ? items : []
+    const raw = await dataRes.json()
+    const items = Array.isArray(raw) ? raw : (Array.isArray((raw as any)?.items) ? (raw as any).items : [])
+    console.log(JSON.stringify({ event: 'apify_employees_done', traceId, count: items.length, rawIsArray: Array.isArray(raw) }))
+    return items
   } catch (err) {
     console.error(JSON.stringify({ event: 'apify_employees_error', traceId, error: (err as Error).message }))
     return []
@@ -665,9 +703,10 @@ async function apify_ProfileSearch(companyName: string, keywords: any, traceId: 
     if (status !== 'SUCCEEDED') return []
 
     const dataRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${APIFY_API_TOKEN}`, { signal: AbortSignal.timeout(15000) })
-    const items = await dataRes.json()
-    console.log(JSON.stringify({ event: 'apify_search_done', traceId, count: Array.isArray(items) ? items.length : 0 }))
-    return Array.isArray(items) ? items : []
+    const raw = await dataRes.json()
+    const items = Array.isArray(raw) ? raw : (Array.isArray((raw as any)?.items) ? (raw as any).items : [])
+    console.log(JSON.stringify({ event: 'apify_search_done', traceId, count: items.length, rawIsArray: Array.isArray(raw) }))
+    return items
   } catch (err) {
     console.error(JSON.stringify({ event: 'apify_search_error', traceId, error: (err as Error).message }))
     return []
