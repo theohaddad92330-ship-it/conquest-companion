@@ -28,11 +28,11 @@ const features = [
 ];
 
 const faqs = [
-  { q: "Puis-je changer de plan ?", a: "Oui, à tout moment. La facturation est ajustée au prorata." },
-  { q: "Que se passe-t-il si je dépasse mes crédits ?", a: "Vous pouvez acheter des crédits supplémentaires à l'unité ou passer au plan supérieur." },
-  { q: "Y a-t-il un engagement ?", a: "Non, tous les plans sont sans engagement. Vous pouvez résilier à tout moment." },
-  { q: "Comment fonctionne l'essai gratuit ?", a: "Inscrivez-vous et recevez 3 analyses de compte gratuites. Aucune carte bancaire requise." },
-  { q: "Combien de temps prend une analyse ?", a: "Une analyse complète prend environ 2 à 5 minutes selon la taille du compte." },
+  { q: "Je peux changer de plan ?", a: "Oui. Vous changez quand vous voulez." },
+  { q: "Si je n’ai plus de crédits ?", a: "Vous passez au plan au-dessus, ou vous reprenez le mois suivant." },
+  { q: "Il y a un engagement ?", a: "Non. Vous arrêtez quand vous voulez." },
+  { q: "Le test gratuit, c’est quoi ?", a: "3 comptes analysés. Pas de carte bancaire." },
+  { q: "Une analyse dure combien de temps ?", a: "En général 2 à 5 minutes, selon le compte." },
 ];
 
 function CellValue({ value }: { value: boolean | string }) {
@@ -57,8 +57,8 @@ export default function Pricing() {
       <div className="pt-32 pb-20 px-6">
         <div className="mx-auto max-w-5xl">
           <motion.div initial="hidden" animate="visible" variants={stagger} className="text-center mb-14">
-            <motion.h1 variants={fadeUp} className="font-display text-3xl md:text-5xl font-bold mb-4">Des tarifs alignés sur votre usage.</motion.h1>
-            <motion.p variants={fadeUp} className="text-foreground/60 text-lg">Pas de surprise. Payez en fonction du nombre de comptes analysés.</motion.p>
+            <motion.h1 variants={fadeUp} className="font-display text-3xl md:text-5xl font-bold mb-4">Vous payez pour avancer.</motion.h1>
+            <motion.p variants={fadeUp} className="text-foreground/60 text-lg">Un prix simple : des comptes analysés, des contacts, et des messages prêts.</motion.p>
           </motion.div>
 
           {/* Plan cards */}
@@ -70,12 +70,12 @@ export default function Pricing() {
             ].map((plan) => (
               <motion.div key={plan.name} variants={fadeUp}>
                 <Card className={`h-full relative ${plan.popular ? "border-primary bellum-glow" : "border-border"}`}>
-                  {plan.popular && <div className="absolute -top-3 left-1/2 -translate-x-1/2"><Badge className="bg-primary text-primary-foreground">★ Populaire</Badge></div>}
+                  {plan.popular && <div className="absolute -top-3 left-1/2 -translate-x-1/2"><Badge className="bg-primary text-primary-foreground">Le plus choisi</Badge></div>}
                   <CardContent className="p-6 text-center space-y-4">
                     <h3 className="font-display text-xl font-semibold">{plan.name}</h3>
                     <div><span className="font-display text-4xl font-bold">{plan.price}</span><span className="text-sm text-foreground/50">{plan.period}</span></div>
                     <Button variant={plan.popular ? "default" : "outline"} className="w-full" asChild>
-                      <Link to="/signup">{plan.name === "Scale" ? "Contacter" : "Essayer gratuitement"}</Link>
+                      <Link to="/signup">{plan.name === "Scale" ? "Parler à l'équipe" : "Tester sur 3 comptes"}</Link>
                     </Button>
                   </CardContent>
                 </Card>
@@ -125,7 +125,7 @@ export default function Pricing() {
 
           <div className="text-center mt-16">
             <Button size="lg" asChild>
-              <Link to="/signup">Commencer avec 3 comptes gratuits <ArrowRight className="h-4 w-4" /></Link>
+              <Link to="/signup">Tester sur 3 comptes <ArrowRight className="h-4 w-4" /></Link>
             </Button>
           </div>
         </div>

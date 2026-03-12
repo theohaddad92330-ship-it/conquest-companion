@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
-  Search, Target, Download, CheckCircle, Zap, ArrowRight,
+  Search, Target, Download, CheckCircle, ArrowRight,
   Building2, Users, Mail, Shield, BarChart3, FileText, Layers, Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PublicNavbar } from "@/components/PublicNavbar";
 import heroDashboard from "@/assets/hero-dashboard.jpg";
+import { BellumLogo } from "@/components/BellumLogo";
 
 const fadeUp = { hidden: { opacity: 0, y: 30 }, visible: { opacity: 1, y: 0 } };
 const stagger = { visible: { transition: { staggerChildren: 0.15 } } };
@@ -23,25 +24,26 @@ export default function Landing() {
         <motion.div initial="hidden" animate="visible" variants={stagger} className="mx-auto max-w-3xl text-center">
           <motion.div variants={fadeUp}>
             <Badge variant="secondary" className="mb-6 px-4 py-1.5 text-xs font-semibold border border-primary/20 bg-primary/5 text-primary">
-              Intelligence commerciale pour ESN
+              Prospection ESN — du concret
             </Badge>
           </motion.div>
 
           <motion.h1 variants={fadeUp} className="font-display text-4xl md:text-6xl font-bold leading-tight mb-6">
-            Transformez un nom de compte{" "}
-            <span className="text-gradient-bellum">en plan de conquête.</span>
+            Gagnez du temps{" "}
+            <span className="text-gradient-bellum">sur chaque compte.</span>
           </motion.h1>
 
           <motion.p variants={fadeUp} className="text-lg text-foreground/70 max-w-xl mx-auto mb-10">
-            Bellum analyse vos comptes cibles, identifie les décideurs, et produit des messages personnalisés prêts à envoyer. <span className="text-primary font-medium">En 10 minutes.</span>
+            Vous tapez un nom. Bellum prépare la fiche, les signaux, les bons rôles à viser, et des messages prêts à envoyer.
+            <span className="text-primary font-medium"> Moins de recherches, plus d&apos;actions.</span>
           </motion.p>
 
           <motion.div variants={fadeUp} className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Button size="lg" className="text-base px-8 h-12" asChild>
-              <Link to="/signup">Essayer gratuitement <ArrowRight className="h-4 w-4" /></Link>
+              <Link to="/signup">Tester sur 3 comptes <ArrowRight className="h-4 w-4" /></Link>
             </Button>
             <Button variant="outline" size="lg" className="text-base px-8 h-12" asChild>
-              <a href="#how-it-works">Voir comment ça marche</a>
+              <a href="#how-it-works">Voir le résultat</a>
             </Button>
           </motion.div>
 
@@ -62,14 +64,14 @@ export default function Landing() {
         <div className="mx-auto max-w-5xl">
           <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger} className="text-center mb-14">
             <motion.h2 variants={fadeUp} className="font-display text-3xl md:text-4xl font-bold mb-4">Comment ça marche</motion.h2>
-            <motion.p variants={fadeUp} className="text-foreground/60 max-w-lg mx-auto">3 étapes pour passer d'un nom d'entreprise à un plan d'action complet, personnalisé à votre ESN.</motion.p>
+            <motion.p variants={fadeUp} className="text-foreground/60 max-w-lg mx-auto">3 étapes. À la fin, vous savez qui contacter, quoi dire, et dans quel ordre.</motion.p>
           </motion.div>
 
           <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger} className="grid md:grid-cols-3 gap-6">
             {[
-              { step: "1", icon: Search, title: "Tapez un nom de compte", desc: "Entrez le nom d'une entreprise cible dans la barre de recherche. Bellum récupère automatiquement les données publiques : structure, actualités, projets IT, signaux d'achat et contexte sectoriel.", detail: "Ex : « Société Générale », « Airbus », « SNCF »" },
-              { step: "2", icon: Target, title: "Bellum analyse et cartographie", desc: "L'IA identifie les décideurs clés (DSI, Achats, Sponsors), construit l'organigramme, détecte les angles d'attaque pertinents et génère des messages personnalisés adaptés à vos offres.", detail: "Score de priorité, chaîne d'influence, enjeux IT détectés" },
-              { step: "3", icon: Download, title: "Exportez et passez à l'action", desc: "Téléchargez votre plan de compte complet : fichier de prospection CSV, emails prêts à envoyer, messages LinkedIn, et plan d'action sur 4 semaines avec les étapes clés.", detail: "CSV, Google Sheets, copier-coller direct" },
+              { step: "1", icon: Search, title: "Vous tapez le nom du compte", desc: "Vous donnez une entreprise. Bellum rassemble le contexte utile : structure, filiales, signaux, projets, enjeux.", detail: "Ex : « Société Générale », « Airbus », « SNCF »" },
+              { step: "2", icon: Target, title: "Vous voyez où entrer", desc: "Bellum propose les rôles à viser, les portes d’entrée par entité, et les angles à tester selon votre ESN.", detail: "Score, signaux, enjeux, organigramme" },
+              { step: "3", icon: Download, title: "Vous passez à l’action", desc: "Vous récupérez une liste exploitable : qui contacter, quoi dire, et quand relancer. Export en CSV / Sheets.", detail: "CSV, Sheets, copier-coller" },
             ].map((item) => (
               <motion.div key={item.step} variants={fadeUp}>
                 <Card className="h-full border-border bg-card hover:border-primary/30 transition-colors">
@@ -91,19 +93,19 @@ export default function Landing() {
       <section id="features" className="py-20 px-6 border-t border-border">
         <div className="mx-auto max-w-4xl">
           <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger} className="text-center mb-14">
-            <motion.h2 variants={fadeUp} className="font-display text-3xl md:text-4xl font-bold mb-4">Tout ce dont un commercial ESN a besoin.</motion.h2>
-            <motion.p variants={fadeUp} className="text-foreground/60 max-w-lg mx-auto">Chaque fonctionnalité est pensée pour le cycle de vente des sociétés de services numériques.</motion.p>
+            <motion.h2 variants={fadeUp} className="font-display text-3xl md:text-4xl font-bold mb-4">Ce que vous gagnez à chaque connexion.</motion.h2>
+            <motion.p variants={fadeUp} className="text-foreground/60 max-w-lg mx-auto">Du recul pour décider, et des livrables prêts à utiliser.</motion.p>
           </motion.div>
 
           <motion.ul initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger} className="space-y-4 max-w-xl mx-auto">
             {[
-              "Fiche compte enrichie (enjeux, projets IT, signaux d'achat)",
-              "50 à 100 contacts clés avec rôle décisionnel identifié",
-              "Organigramme interactif des chaînes d'influence",
-              "3 angles d'attaque personnalisés selon vos offres",
-              "Plan d'action structuré sur 4 semaines",
-              "Emails + messages LinkedIn rédigés et prêts à envoyer",
-              "Fichier de prospection exportable en CSV et Google Sheets",
+              "Moins de recherches : le contexte utile est déjà rassemblé",
+              "Une liste de rôles à viser (décideur, champion, achats, opérationnel)",
+              "Des signaux pour relancer au bon moment",
+              "Des angles d’approche reliés à vos offres ESN",
+              "Un plan d’action simple à suivre semaine par semaine",
+              "Des messages prêts à adapter et à envoyer",
+              "Un export CSV / Sheets pour passer au CRM",
             ].map((item) => (
               <motion.li key={item} variants={fadeUp} className="flex items-start gap-3">
                 <CheckCircle className="h-5 w-5 text-bellum-success shrink-0 mt-0.5" />
@@ -114,7 +116,7 @@ export default function Landing() {
 
           <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} className="text-center mt-10 space-y-3">
             <Button size="lg" asChild>
-              <Link to="/signup">Essayer gratuitement <ArrowRight className="h-4 w-4" /></Link>
+              <Link to="/signup">Tester sur 3 comptes <ArrowRight className="h-4 w-4" /></Link>
             </Button>
             <p className="text-sm text-foreground/50">
               <Link to="/features" className="text-primary hover:underline font-medium">Voir toutes les fonctionnalités en détail →</Link>
@@ -127,17 +129,17 @@ export default function Landing() {
       <section className="py-20 px-6 border-t border-border">
         <div className="mx-auto max-w-4xl">
           <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
-            <motion.h2 variants={fadeUp} className="font-display text-3xl md:text-4xl font-bold mb-4 text-center">Pas un outil généraliste.</motion.h2>
-            <motion.p variants={fadeUp} className="text-center text-foreground/60 mb-4 max-w-lg mx-auto">Bellum n'est pas un CRM, ni un outil de scraping. C'est un moteur d'intelligence commerciale conçu exclusivement pour les ESN et sociétés de conseil IT.</motion.p>
-            <motion.p variants={fadeUp} className="text-center text-foreground/50 text-sm mb-10 max-w-md mx-auto">Chaque analyse tient compte de votre positionnement, de vos offres et de votre historique pour des recommandations réellement actionnables.</motion.p>
+            <motion.h2 variants={fadeUp} className="font-display text-3xl md:text-4xl font-bold mb-4 text-center">Conçu pour vendre des missions ESN.</motion.h2>
+            <motion.p variants={fadeUp} className="text-center text-foreground/60 mb-4 max-w-lg mx-auto">Vous n’avez pas besoin de “plus de données”. Vous avez besoin de savoir quoi faire, sans y passer la journée.</motion.p>
+            <motion.p variants={fadeUp} className="text-center text-foreground/50 text-sm mb-10 max-w-md mx-auto">Bellum utilise votre profil ESN (offres, secteurs, personas, zone) pour sortir des recommandations qui collent au terrain.</motion.p>
             <motion.div variants={stagger} className="grid md:grid-cols-2 gap-4 max-w-2xl mx-auto">
               {[
-                { icon: Layers, title: "Angles d'attaque sur-mesure", desc: "Basés sur vos offres, votre bench actuel et votre positionnement sectoriel" },
-                { icon: Mail, title: "Messages calibrés B2B prestation", desc: "Tonalité et arguments adaptés au cycle de vente long des ESN" },
-                { icon: Users, title: "Personas métier identifiés", desc: "DSI, Achats IT, Sponsors, Ops — ciblage précis des chaînes de décision" },
-                { icon: FileText, title: "Méthodologie plan de compte", desc: "Approche structurée en 4 semaines avec jalons et relances intégrées" },
-                { icon: Shield, title: "Exclusion des référencements existants", desc: "Filtrez les comptes où vous êtes déjà référencé pour cibler les nouvelles conquêtes" },
-                { icon: Clock, title: "ROI immédiat : 10 min par compte", desc: "Ce qui prenait 2 jours de recherche manuelle est fait en quelques minutes" },
+                { icon: Layers, title: "Angles reliés à vos offres", desc: "Vous évitez les idées hors sujet. Vous gardez ce qui peut se vendre." },
+                { icon: Mail, title: "Messages utilisables", desc: "Une base claire par rôle. Vous adaptez et vous envoyez." },
+                { icon: Users, title: "Rôles à viser", desc: "Décideur, champion, achats, opérationnel : vous savez qui chercher." },
+                { icon: FileText, title: "Plan d’action simple", desc: "Une suite d’étapes pour avancer, sans vous disperser." },
+                { icon: Shield, title: "Moins de bruit", desc: "Vous vous concentrez sur les comptes à ouvrir, pas sur ceux déjà gagnés." },
+                { icon: Clock, title: "Temps sauvé", desc: "Vous passez moins de temps à chercher, plus de temps à contacter." },
               ].map((item) => (
                 <motion.div key={item.title} variants={fadeUp} className="flex items-start gap-3 p-4 rounded-lg border border-border bg-card hover:border-primary/30 transition-colors">
                   <item.icon className="h-5 w-5 text-primary shrink-0 mt-0.5" />
@@ -194,9 +196,7 @@ export default function Landing() {
           <div className="grid md:grid-cols-4 gap-8">
             <div>
               <div className="flex items-center gap-2 mb-4">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary">
-                  <Zap className="h-3.5 w-3.5 text-primary-foreground" />
-                </div>
+              <BellumLogo size={28} className="rounded-lg shadow-none ring-0" />
                 <span className="font-display font-bold">Bellum AI</span>
               </div>
               <p className="text-sm text-foreground/50">Transformez un nom de compte en plan de conquête.</p>

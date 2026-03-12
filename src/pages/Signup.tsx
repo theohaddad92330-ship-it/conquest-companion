@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "react-router-dom";
-import { Zap } from "lucide-react";
+import { BellumLogo } from "@/components/BellumLogo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -81,12 +81,11 @@ export default function Signup() {
         <CardContent className="p-8 space-y-6">
           <div className="text-center space-y-2">
             <Link to="/" className="inline-flex items-center gap-2 mb-4">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
-                <Zap className="h-4.5 w-4.5 text-primary-foreground" />
-              </div>
+              <BellumLogo size={36} className="rounded-lg" />
               <span className="font-display text-xl font-bold">Bellum AI</span>
             </Link>
-            <h1 className="font-display text-2xl font-bold">Créez votre compte</h1>
+            <h1 className="font-display text-2xl font-bold">Créer mon compte</h1>
+            <p className="text-sm text-muted-foreground">3 comptes à tester. Pas de carte bancaire.</p>
           </div>
 
           <Button variant="outline" className="w-full h-11 gap-2" onClick={handleGoogle} disabled={loading}>
@@ -119,7 +118,7 @@ export default function Signup() {
               </label>
             </div>
             <Button type="submit" className="w-full h-11" disabled={!accepted || loading}>
-              {loading ? "Création…" : "Créer mon compte →"}
+              {loading ? "Création…" : "Créer mon compte"}
             </Button>
           </form>
 

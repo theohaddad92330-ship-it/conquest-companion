@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { BellumLogo } from "@/components/BellumLogo";
 
 export default function ResetPassword() {
   const [password, setPassword] = useState("");
@@ -55,9 +55,7 @@ export default function ResetPassword() {
         <CardContent className="p-8 space-y-6">
           <div className="text-center space-y-2">
             <Link to="/" className="inline-flex items-center gap-2 mb-4">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
-                <Zap className="h-4.5 w-4.5 text-primary-foreground" />
-              </div>
+              <BellumLogo size={36} className="rounded-lg" />
               <span className="font-display text-xl font-bold">Bellum AI</span>
             </Link>
             <h1 className="font-display text-2xl font-bold">Nouveau mot de passe</h1>

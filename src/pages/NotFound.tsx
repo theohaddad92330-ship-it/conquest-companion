@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
-import { Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
+import { BellumLogo } from "@/components/BellumLogo";
 
 export default function NotFound() {
   const navigate = useNavigate();
@@ -11,9 +11,7 @@ export default function NotFound() {
     <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6">
       <div className="text-center space-y-6 max-w-md">
         <Link to="/" className="inline-flex items-center gap-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
-            <Zap className="h-5 w-5 text-primary-foreground" />
-          </div>
+          <BellumLogo size={40} className="rounded-lg" />
           <span className="font-display text-xl font-bold text-foreground">Bellum AI</span>
         </Link>
         <h1 className="font-display text-4xl font-bold text-foreground">404</h1>

@@ -29,7 +29,6 @@ import Contacts from "./pages/Contacts";
 import AccountDetail from "./pages/AccountDetail";
 import Profile from "./pages/Profile";
 import Billing from "./pages/Billing";
-import History from "./pages/History";
 import KnowledgeBase from "./pages/KnowledgeBase";
 import Help from "./pages/Help";
 import Terms from "./pages/Terms";
@@ -76,7 +75,6 @@ const App = () => (
             <Route path="/profile" element={<ProtectedRoute><Layout><Profile /></Layout></ProtectedRoute>} />
             <Route path="/knowledge" element={<ProtectedRoute><Layout><KnowledgeBase /></Layout></ProtectedRoute>} />
             <Route path="/billing" element={<ProtectedRoute><Layout><Billing /></Layout></ProtectedRoute>} />
-            <Route path="/history" element={<ProtectedRoute><Layout><History /></Layout></ProtectedRoute>} />
             <Route path="/help" element={<ProtectedRoute><Layout><Help /></Layout></ProtectedRoute>} />
 
             <Route path="*" element={<NotFound />} />

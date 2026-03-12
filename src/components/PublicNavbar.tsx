@@ -1,7 +1,8 @@
 import { Link, useLocation } from "react-router-dom";
-import { Zap, ArrowRight, Menu, X } from "lucide-react";
+import { ArrowRight, Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
+import { BellumLogo } from "@/components/BellumLogo";
 
 const links = [
   { label: "Fonctionnalités", to: "/features" },
@@ -16,9 +17,7 @@ export function PublicNavbar() {
     <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
       <div className="mx-auto max-w-6xl flex items-center justify-between px-6 h-16">
         <Link to="/" className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-            <Zap className="h-4 w-4 text-primary-foreground" />
-          </div>
+          <BellumLogo size={32} className="rounded-lg" />
           <span className="font-display text-lg font-bold">Bellum AI</span>
         </Link>
 

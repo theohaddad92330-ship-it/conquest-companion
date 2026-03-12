@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { BellumLogo } from "@/components/BellumLogo";
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState("");
@@ -33,10 +33,10 @@ export default function ForgotPassword() {
       <div className="min-h-screen bg-background flex items-center justify-center px-6">
         <Card className="w-full max-w-sm border-border">
           <CardContent className="p-8 space-y-6 text-center">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-              <Zap className="h-6 w-6 text-primary" />
+            <div className="mx-auto">
+              <BellumLogo size={48} className="rounded-xl" />
             </div>
-            <h1 className="font-display text-xl font-bold">Email envoyé !</h1>
+            <h1 className="font-display text-xl font-bold">C&apos;est envoyé</h1>
             <p className="text-sm text-muted-foreground">
               Si un compte existe avec l'adresse <strong>{email}</strong>, vous recevrez un lien de réinitialisation.
             </p>
@@ -55,13 +55,11 @@ export default function ForgotPassword() {
         <CardContent className="p-8 space-y-6">
           <div className="text-center space-y-2">
             <Link to="/" className="inline-flex items-center gap-2 mb-4">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
-                <Zap className="h-4.5 w-4.5 text-primary-foreground" />
-              </div>
+              <BellumLogo size={36} className="rounded-lg" />
               <span className="font-display text-xl font-bold">Bellum AI</span>
             </Link>
             <h1 className="font-display text-2xl font-bold">Mot de passe oublié</h1>
-            <p className="text-sm text-muted-foreground">Entrez votre email pour recevoir un lien de réinitialisation.</p>
+            <p className="text-sm text-muted-foreground">On vous envoie un lien. Vous choisissez un nouveau mot de passe.</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -70,7 +68,7 @@ export default function ForgotPassword() {
               <Input type="email" placeholder="john@esn.com" value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
             <Button type="submit" className="w-full h-11" disabled={loading || !email}>
-              {loading ? "Envoi…" : "Envoyer le lien →"}
+              {loading ? "Envoi…" : "Envoyer le lien"}
             </Button>
           </form>
 

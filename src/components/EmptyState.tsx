@@ -10,7 +10,7 @@ const config = {
   accounts: {
     icon: Building2,
     title: "Aucun compte analysé",
-    description: "Lancez votre première recherche pour commencer à construire votre pipeline.",
+    description: "Tapez un compte. Vous repartez avec une fiche, des signaux, et une prochaine action.",
     cta: "Lancer une recherche",
     to: "/search",
   },
@@ -24,7 +24,7 @@ const config = {
   search: {
     icon: Search,
     title: "Aucun résultat",
-    description: "Essayez avec un autre nom d'entreprise.",
+    description: "Essayez le nom officiel (raison sociale) ou une autre orthographe.",
     cta: "Nouvelle recherche",
     to: "/search",
   },

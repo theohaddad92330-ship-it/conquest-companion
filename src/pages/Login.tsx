@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "react-router-dom";
-import { Zap } from "lucide-react";
+import { BellumLogo } from "@/components/BellumLogo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -27,7 +27,6 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [debug, setDebug] = useState<{ step: string; at: number; detail?: string } | null>(null);
   const { user, signIn, signInWithGoogle } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -71,12 +70,9 @@ export default function Login() {
       toast({ title: "Champs requis", description: "Veuillez remplir tous les champs.", variant: "destructive" });
       return;
     }
-    setDebug({ step: "submit_clicked", at: Date.now() });
     setLoading(true);
     try {
-      setDebug({ step: "signIn_start", at: Date.now() });
       const { error } = await withTimeout(signIn(email, password), AUTH_TIMEOUT_MS, "Connexion");
-      setDebug({ step: "signIn_done", at: Date.now(), detail: error ? String((error as any)?.message || error) : "ok" });
       if (error) {
         const msg = (error as Error).message?.includes("Invalid login")
           ? "Email ou mot de passe incorrect."
@@ -84,7 +80,6 @@ export default function Login() {
         toast({ title: "Erreur de connexion", description: msg, variant: "destructive" });
       }
     } catch (err) {
-      setDebug({ step: "signIn_throw", at: Date.now(), detail: err instanceof Error ? err.message : String(err) });
       console.error("[login] signIn failed", err);
       toast({
         title: "Connexion impossible",
@@ -112,12 +107,11 @@ export default function Login() {
         <CardContent className="p-8 space-y-6">
           <div className="text-center space-y-2">
             <Link to="/" className="inline-flex items-center gap-2 mb-4">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
-                <Zap className="h-4.5 w-4.5 text-primary-foreground" />
-              </div>
+              <BellumLogo size={36} className="rounded-lg" />
               <span className="font-display text-xl font-bold">Bellum AI</span>
             </Link>
-            <h1 className="font-display text-2xl font-bold">Connectez-vous</h1>
+            <h1 className="font-display text-2xl font-bold">Reprendre</h1>
+            <p className="text-sm text-muted-foreground">Vous revenez où vous en étiez.</p>
           </div>
 
           <Button variant="outline" className="w-full h-11 gap-2" onClick={handleGoogle} disabled={loading}>
@@ -140,10 +134,10 @@ export default function Login() {
               <Input type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} />
             </div>
             <div className="text-right">
-              <Link to="/forgot-password" className="text-xs text-primary hover:underline">Mot de passe oublié ?</Link>
+            <Link to="/forgot-password" className="text-xs text-primary hover:underline">Mot de passe oublié</Link>
             </div>
             <Button type="submit" className="w-full h-11" disabled={loading}>
-              {loading ? "Connexion…" : "Se connecter →"}
+            {loading ? "Connexion…" : "Se connecter"}
             </Button>
           </form>
 
@@ -151,16 +145,6 @@ export default function Login() {
             Pas encore de compte ?{" "}
             <Link to="/signup" className="text-primary hover:underline font-medium">Créer un compte</Link>
           </p>
-
-          {import.meta.env.DEV ? (
-            <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
-              <div><span className="font-medium">Debug login</span></div>
-              <div>loading: {String(loading)}</div>
-              <div>user: {user ? "yes" : "no"}</div>
-              <div>step: {debug?.step || "none"}</div>
-              <div>detail: {debug?.detail || ""}</div>
-            </div>
-          ) : null}
         </CardContent>
       </Card>
     </div>

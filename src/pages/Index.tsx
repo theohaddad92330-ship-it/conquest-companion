@@ -1,9 +1,10 @@
 import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Zap } from "lucide-react";
+import { Search } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { BellumLogo } from "@/components/BellumLogo";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -38,7 +39,7 @@ const Index = () => {
               className="text-center mb-8"
             >
               <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-4 py-1.5 mb-6">
-                <Zap className="h-3.5 w-3.5 text-primary" />
+                <BellumLogo size={18} className="rounded-md shadow-none ring-0" />
                 <span className="text-xs font-medium text-primary">
                   Intelligence commerciale pour ESN
                 </span>

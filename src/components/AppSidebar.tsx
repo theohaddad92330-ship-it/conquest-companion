@@ -1,6 +1,6 @@
 import {
-  Search, Building2, LayoutDashboard, Clock, Settings,
-  Coins, HelpCircle, LogOut, Zap, Users, BookOpen,
+  Search, Building2, LayoutDashboard, Settings,
+  Coins, HelpCircle, LogOut, Users, BookOpen,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
@@ -15,12 +15,12 @@ import {
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader,
   SidebarFooter, SidebarSeparator, useSidebar,
 } from "@/components/ui/sidebar";
+import { BellumLogo } from "@/components/BellumLogo";
 
 const mainNav = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "Mes comptes", url: "/accounts", icon: Building2 },
   { title: "Mes contacts", url: "/contacts", icon: Users },
-  { title: "Historique", url: "/history", icon: Clock },
 ];
 
 const settingsNav = [
@@ -54,9 +54,7 @@ export function AppSidebar() {
     <Sidebar collapsible="icon" className="border-r border-border">
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-muted">
-            <Zap className="h-4 w-4 text-muted-foreground" />
-          </div>
+          <BellumLogo size={32} className="rounded-xl" />
           {!collapsed && (
             <span className="text-base font-display font-bold tracking-tight text-foreground">
               Bellum AI

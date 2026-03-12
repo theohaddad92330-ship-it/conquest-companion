@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { Search as SearchIcon, Zap, CheckCircle, Loader2, Circle, AlertTriangle } from "lucide-react";
+import { Search as SearchIcon, CheckCircle, Loader2, Circle, AlertTriangle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -20,13 +20,13 @@ interface Step {
 }
 
 const initialSteps: Step[] = [
-  { label: "Recherche web", status: "pending" },
-  { label: "Données entreprise", status: "pending" },
-  { label: "Analyse IA du compte", status: "pending" },
-  { label: "Scraping LinkedIn", status: "pending" },
-  { label: "Construction organigramme", status: "pending" },
-  { label: "Enrichissement contacts", status: "pending" },
-  { label: "Génération messages", status: "pending" },
+  { label: "On récupère le contexte", status: "pending" },
+  { label: "On trie l’info utile", status: "pending" },
+  { label: "On prépare la fiche", status: "pending" },
+  { label: "On cherche des contacts", status: "pending" },
+  { label: "On organise par entité", status: "pending" },
+  { label: "On enrichit les profils", status: "pending" },
+  { label: "On prépare des messages", status: "pending" },
 ];
 
 const ESTIMATED_TOTAL_SECONDS = 120; // ~2 min pour les premières étapes
@@ -41,10 +41,10 @@ function formatTimeRemaining(elapsedSeconds: number, progress: number): string {
 }
 
 const LOADING_MESSAGES = [
-  "Nous traitons plus de 238 sources de données en même temps.",
-  "Recherche web, analyse IA et enrichissement des contacts en cours.",
-  "Ne fermez pas la page — la mise à jour est automatique toutes les 2 secondes.",
-  "Les premières étapes (recherche + analyse) prennent en général 1 à 2 minutes.",
+  "On rassemble le contexte utile pour éviter 2 heures de recherche.",
+  "On prépare la fiche et les signaux que vous pourrez citer.",
+  "On cherche des portes d’entrée par entité.",
+  "Laissez la page ouverte. La mise à jour se fait toute seule.",
 ];
 
 export default function SearchPage() {
@@ -154,7 +154,6 @@ export default function SearchPage() {
           {isIdle && (
             <motion.div key="hero" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="text-center mb-8">
               <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-4 py-1.5 mb-6">
-                <Zap className="h-3.5 w-3.5 text-primary" />
                 <span className="text-xs font-medium text-primary">Nouvelle recherche</span>
               </div>
               <h1 className="font-display text-3xl font-bold mb-3 md:text-4xl">

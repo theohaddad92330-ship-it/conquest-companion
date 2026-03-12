@@ -19,7 +19,6 @@ const routeLabels: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/accounts": "Mes comptes",
   "/contacts": "Mes contacts",
-  "/history": "Historique",
   "/profile": "Mon profil ESN",
   "/billing": "Crédits & plan",
   "/help": "Aide",

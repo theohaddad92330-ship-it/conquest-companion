@@ -1,8 +1,9 @@
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Zap, ArrowRight, CheckCircle2, ClipboardList, Sparkles } from "lucide-react";
+import { ArrowRight, CheckCircle2, ClipboardList, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
+import { BellumLogo } from "@/components/BellumLogo";
 
 export default function Welcome() {
   const navigate = useNavigate();
@@ -22,9 +23,7 @@ export default function Welcome() {
       >
         {/* Logo */}
         <div className="flex justify-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary">
-            <Zap className="h-7 w-7 text-primary-foreground" />
-          </div>
+          <BellumLogo size={56} className="rounded-2xl" />
         </div>
 
         {/* Heading */}

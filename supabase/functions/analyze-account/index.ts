@@ -400,6 +400,8 @@ ${scrapedContent}
 RÈGLES CRITIQUES :
 - programNames : des VRAIS noms de programmes/projets (ex. "Programme NEMO", "Projet Phoenix"), pas des thématiques génériques. Si trouvé dans les données, les citer. Sinon "Non détecté".
 - entitiesExhaustive : inclure sièges et entités en RÉGION (sièges locaux, directions régionales), pas seulement le siège central. Pour les groupes (ex. banques) : filiales métiers (RESG, banque de détail, banque privée, etc.) avec type et parent.
+- sitesFrance : à partir du siège, des filiales et entitiesExhaustive, lister les sites/localisations en France uniquement (ville, région, type, label, importance). Si siège à Paris → un item Paris. Si filiale à Lyon ou direction régionale Nantes → les ajouter. Villes françaises connues (Paris, Lyon, Lille, Nantes, Toulouse, Bordeaux, Marseille, Strasbourg, Rennes, Nice, etc.). Si aucune info géo France → [].
+- esnSynergies : identifier les ESN (SSII, cabinets) CITÉES ou fortement probables déjà en place sur le compte (compte-rendus, références, partenariats, offres, annonces). Pour chacune : nom, type de présence (rang 1, niche, partenaire), niveau de certitude (0-100), pourquoi tu le penses, et conseil concret pour l'utilisateur (synergie, sous-traitance, co-traitance, entrée par eux). Adapter ces conseils à la taille de l'ESN utilisatrice (petite ESN = privilégier synergies / sous-traitance, pas frontal).
 - Rechercher dans les données : baisses de budget IT, blocages ou perte de référencement rang 1, difficultés fournisseurs, autres filiales connues (ex. RESG pour SocGen).
 - priorityScore : DOIT refléter la difficulté pour CE profil. Ex. si l'utilisateur a 0-20 consultants (petite ESN), ouvrir un grand compte = très dur → score 4-6 pas 9. Si 200+ consultants et bon alignement → score 8-9. Justification détaillée dans priorityJustification.overall.
 
@@ -414,6 +416,7 @@ Produis ce JSON :
   "isPublic": false,
   "subsidiaries": ["Filiale 1"],
   "entitiesExhaustive": [{"name": "Entité ou siège régional", "type": "filiale|BU|siège_régional|groupe", "parent": "Parent", "region": "Région si applicable"}],
+  "sitesFrance": [{"city": "Paris", "region": "Île-de-France", "type": "siège|filiale|direction_régionale|centre_services", "label": "Siège social", "importance": "haute|moyenne|basse"}],
   "programNames": [{"name": "Nom RÉEL du programme (ex. NEMO)", "entity": "Entité", "description": "Desc", "technologies": ["Tech"]}],
   "budgetSignals": ["Baisse budget", "Blocage ref", "..."],
   "itChallenges": ["Enjeu 1"],
@@ -422,6 +425,13 @@ Produis ce JSON :
   "priorityScore": 5,
   "priorityJustification": {"urgency": {"score": 5, "justification": "..."}, "accessibility": {"score": 5, "justification": "..."}, "competition": {"score": 5, "justification": "..."}, "alignment": {"score": 5, "justification": "..."}, "potential": {"score": 5, "justification": "..."}, "overall": "Justification détaillée en fonction du profil (taille ESN, alignement). Pas toujours 9/10."},
   "competitors": [{"name": "ESN", "perimeter": "Périmètre", "strength": "Forces", "weakness": "Faiblesses"}],
+  "esnSynergies": [{
+    "name": "Nom ESN",
+    "certainty": 78,
+    "presenceType": "referencement_rang1|partenaire|niche|probable",
+    "why": "Ce qui montre qu'ils sont (ou ont été) en place sur ce compte",
+    "adviceForUser": "Texte court expliquant comment en tirer parti (co-traitance, sous-traitance, intro, etc.), adapté à une ESN de cette taille"
+  }],
   "technologyStack": ["Tech 1"],
   "regulations": ["NIS2", "RGPD"],
   "angles": [{"title": "Titre", "description": "Description détaillée", "entry": "Contact d'entrée → escalade", "offer": "Offre ESN"}],

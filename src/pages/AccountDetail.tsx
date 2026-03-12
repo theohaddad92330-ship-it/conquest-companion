@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import {
   ArrowLeft, Download, FileSpreadsheet, Pencil, Building2, Users,
   GitBranch, AlertTriangle, TrendingUp, Target, Mail, Linkedin,
-  RotateCw, Phone, ExternalLink, Copy, CheckCircle, Star, Loader2, Circle,
+  RotateCw, Phone, ExternalLink, Copy, CheckCircle, Star, Loader2, Circle, MapPin,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -23,6 +23,7 @@ import { useProfile } from "@/hooks/useProfile";
 import type { AccountAnalysis, Contact, AttackAngle, ActionPlan } from "@/types/account";
 import { generateCSV, downloadCSV } from "@/lib/export-csv";
 import { safeString } from "@/lib/utils";
+import { FranceSitesMap } from "@/components/FranceSitesMap";
 
 const fadeUp = { hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } };
 
@@ -135,12 +136,50 @@ function TabFiche({ account }: { account: AccountAnalysis }) {
         </Card>
       )}
 
+      {Array.isArray(account.raw_analysis?.sitesFrance) && account.raw_analysis.sitesFrance.length > 0 && (
+        <Card className="border-border card-neutral rounded-xl">
+          <CardContent className="p-6 space-y-4">
+            <h3 className="font-display text-sm font-semibold flex items-center gap-2">
+              <MapPin className="h-4 w-4 text-muted-foreground" />Sites en France
+            </h3>
+            <p className="text-xs text-muted-foreground">Sièges et implantations identifiés, positionnés sur la carte.</p>
+            <FranceSitesMap sites={account.raw_analysis.sitesFrance as { city?: string; region?: string; type?: string; label?: string; importance?: string }[]} />
+            <div className="rounded-lg border border-border overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-border">
+                    <TableHead className="text-xs">Ville</TableHead>
+                    <TableHead className="text-xs">Région</TableHead>
+                    <TableHead className="text-xs">Type</TableHead>
+                    <TableHead className="text-xs">Priorité</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(account.raw_analysis.sitesFrance as { city?: string; region?: string; type?: string; label?: string; importance?: string }[]).map((s, i) => (
+                    <TableRow key={i} className="border-border">
+                      <TableCell className="text-sm font-medium">{safeString(s.city)}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{safeString(s.region)}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{safeString(s.type ?? s.label)}</TableCell>
+                      <TableCell>
+                        <Badge variant={s.importance === "haute" ? "default" : "secondary"} className="text-xs">
+                          {safeString(s.importance) || "—"}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card className="border-border card-neutral rounded-xl">
         <CardContent className="p-6 space-y-3">
           <h3 className="font-display text-sm font-semibold flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-muted-foreground" />Ce qui motive leurs projets IT
+            <AlertTriangle className="h-4 w-4 text-muted-foreground" />Ce qu’ils veulent régler (côté IT)
           </h3>
-          <p className="text-xs text-muted-foreground">Enjeux et priorités identifiés pour ce compte — à réutiliser dans vos échanges.</p>
+          <p className="text-xs text-muted-foreground">À citer dans vos messages et au téléphone. Une phrase suffit.</p>
           <ul className="space-y-2">
             {(account.it_challenges || []).map((c) => (
               <li key={c} className="flex items-start gap-2 text-sm">
@@ -157,9 +196,9 @@ function TabFiche({ account }: { account: AccountAnalysis }) {
       <Card className="border-border card-neutral rounded-xl">
         <CardContent className="p-6 space-y-3">
           <h3 className="font-display text-sm font-semibold flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />Actualités et signaux d&apos;achat
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />Ce qui se passe (bon prétexte pour relancer)
           </h3>
-          <p className="text-xs text-muted-foreground">Nominations, recrutements, investissements — opportunités pour engager la conversation.</p>
+          <p className="text-xs text-muted-foreground">Citez un signal, posez une question, proposez une étape simple.</p>
           <div className="space-y-2">
             {(account.recent_signals || []).map((s: unknown, i: number) => {
               const icons = ["📰", "💼", "📢", "🔄", "📊"];
@@ -180,7 +219,7 @@ function TabFiche({ account }: { account: AccountAnalysis }) {
       <Card className="border-border card-neutral rounded-xl">
         <CardContent className="p-6">
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">Score de priorité : {account.priority_score}/10</p>
-          <p className="text-xs text-muted-foreground mb-2">Ce que signifie ce score pour vous — à lire avant de prioriser vos actions.</p>
+          <p className="text-xs text-muted-foreground mb-2">Plus c’est haut, plus ça vaut votre temps (maintenant).</p>
           <p className="text-sm text-foreground/90">&ldquo;{typeof account.priority_justification === "string" ? account.priority_justification : (account.priority_justification as { overall?: string } | null)?.overall ?? "—"}&rdquo;</p>
         </CardContent>
       </Card>
@@ -443,6 +482,36 @@ function TabOrganigramme({ account, contacts }: { account: AccountAnalysis; cont
     unknown: "—",
   };
 
+  const roleStyle: Record<string, { bar: string; badge: string }> = {
+    sponsor: { bar: "border-t-4 border-t-emerald-500/70", badge: "bg-emerald-500/10 text-emerald-700 border-emerald-500/20 dark:text-emerald-300" },
+    champion: { bar: "border-t-4 border-t-sky-500/70", badge: "bg-sky-500/10 text-sky-700 border-sky-500/20 dark:text-sky-300" },
+    operational: { bar: "border-t-4 border-t-violet-500/70", badge: "bg-violet-500/10 text-violet-700 border-violet-500/20 dark:text-violet-300" },
+    purchasing: { bar: "border-t-4 border-t-amber-500/70", badge: "bg-amber-500/10 text-amber-700 border-amber-500/20 dark:text-amber-300" },
+    influencer: { bar: "border-t-4 border-t-fuchsia-500/70", badge: "bg-fuchsia-500/10 text-fuchsia-700 border-fuchsia-500/20 dark:text-fuchsia-300" },
+    blocker: { bar: "border-t-4 border-t-rose-500/70", badge: "bg-rose-500/10 text-rose-700 border-rose-500/20 dark:text-rose-300" },
+    unknown: { bar: "border-t-4 border-t-muted-foreground/30", badge: "bg-muted text-muted-foreground border-border" },
+  };
+
+  const entityMeta = useMemo(() => {
+    return entities.map((entity) => {
+      const list = contactsByEntity[entity] || [];
+      const uncovered = list.length === 0;
+      const byRole = list.reduce((acc: Record<string, number>, c) => {
+        const r = (c.decision_role || "unknown").toLowerCase();
+        acc[r] = (acc[r] || 0) + 1;
+        return acc;
+      }, {});
+      return { entity, list, uncovered, byRole };
+    });
+  }, [entities, contactsByEntity]);
+
+  function initials(name: string) {
+    const parts = (name || "").trim().split(/\s+/).filter(Boolean);
+    const a = parts[0]?.[0] ?? "";
+    const b = parts.length > 1 ? parts[parts.length - 1]?.[0] ?? "" : (parts[0]?.[1] ?? "");
+    return (a + b).toUpperCase().slice(0, 2) || "—";
+  }
+
   return (
     <div className="space-y-6">
       {organigrammeLogic && (organigrammeLogic.hierarchy || organigrammeLogic.siblingEntities || organigrammeLogic.entryPoints) && (
@@ -470,57 +539,127 @@ function TabOrganigramme({ account, contacts }: { account: AccountAnalysis; cont
           </CardContent>
         </Card>
       )}
-      <p className="text-xs text-muted-foreground mb-1">
-        Entités du groupe et contacts identifiés par entité.
-      </p>
-      <p className="text-xs text-muted-foreground/80 mb-4">
-        <span className="inline-block w-3 h-3 rounded border-2 border-border bg-card align-middle mr-1" /> Au moins un contact identifié · <span className="inline-block w-3 h-3 rounded border-2 border-dashed border-muted-foreground/50 bg-muted/30 align-middle mr-1" /> Zone non couverte
-      </p>
-      <div className="relative">
-        {/* Niveau 0 : entreprise */}
-        <div className="flex justify-center mb-4">
-          <div className="rounded-lg border-2 border-border bg-muted/50 px-4 py-2 text-sm font-semibold text-foreground">
-            {account.company_name}
-          </div>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="min-w-[260px]">
+          <h3 className="font-display text-sm font-semibold">Organigramme</h3>
+          <p className="text-xs text-muted-foreground mt-1">
+            Vue “compte → entités → contacts” pour repérer rapidement les zones couvertes et vos meilleurs points d’entrée.
+          </p>
         </div>
-        <div className="flex justify-center">
-          <div className="w-px h-4 bg-border" />
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2 py-1">
+            <span className="inline-block w-2.5 h-2.5 rounded-sm border border-border bg-card" /> Couvert
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2 py-1">
+            <span className="inline-block w-2.5 h-2.5 rounded-sm border border-dashed border-muted-foreground/50 bg-muted/30" /> Non couvert
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-emerald-700 dark:text-emerald-300">
+            Décideur
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full border border-sky-500/20 bg-sky-500/10 px-2 py-1 text-sky-700 dark:text-sky-300">
+            Champion
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full border border-violet-500/20 bg-violet-500/10 px-2 py-1 text-violet-700 dark:text-violet-300">
+            Opérationnel
+          </span>
         </div>
-        {/* Niveau 1 : entités */}
-        <div className="flex flex-wrap justify-center gap-4 mt-2">
-          {entities.map((entity) => {
-            const list = contactsByEntity[entity] || [];
-            const uncovered = list.length === 0;
-            return (
-              <div key={entity} className="flex flex-col items-center min-w-[200px]">
-                <div className="w-px h-4 bg-border shrink-0" />
-                <div
-                  className={`rounded-lg border-2 px-3 py-2 w-full text-center text-sm font-medium ${
-                    uncovered ? "border-dashed border-muted-foreground/50 bg-muted/30 text-muted-foreground" : "border-border bg-card"
-                  }`}
-                >
-                  {entity}
-                  {uncovered && <span className="block text-xs mt-1">Zone non couverte</span>}
-                </div>
-                <div className="w-px flex-1 min-h-[8px] bg-border mt-2" />
-                <div className="mt-2 space-y-2 w-full">
-                  {list.map((c) => (
-                    <div
-                      key={c.id}
-                      className="rounded-md border border-border bg-background px-3 py-2 text-left text-xs"
-                    >
-                      <div className="font-medium text-foreground">{c.full_name}</div>
-                      <div className="text-muted-foreground">{c.title || "—"}</div>
-                      <Badge variant="secondary" className="mt-1 text-[10px]">
-                        {roleLabel[c.decision_role] || c.decision_role}
-                      </Badge>
+      </div>
+
+      {/* Root */}
+      <div className="flex justify-center">
+        <div className="relative">
+          <Card className="border-border card-neutral rounded-xl">
+            <CardContent className="px-5 py-3">
+              <div className="text-sm font-semibold text-center">{account.company_name}</div>
+              <div className="text-[11px] text-muted-foreground text-center mt-0.5">{account.sector || "—"}</div>
+            </CardContent>
+          </Card>
+          <div className="absolute left-1/2 -bottom-4 w-px h-4 bg-border" />
+        </div>
+      </div>
+
+      {/* Entities grid */}
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {entityMeta.map(({ entity, list, uncovered, byRole }) => {
+          const top3 = [...list].sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99)).slice(0, 9);
+          return (
+            <Card
+              key={entity}
+              className={cn(
+                "border-border card-neutral rounded-xl overflow-hidden",
+                uncovered && "border-dashed"
+              )}
+            >
+              <div className="px-5 pt-4 pb-3 border-b border-border bg-card">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold truncate">{entity}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {uncovered ? "Zone non couverte" : `${list.length} contact${list.length > 1 ? "s" : ""} identifié${list.length > 1 ? "s" : ""}`}
                     </div>
-                  ))}
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {(["sponsor", "champion", "operational", "purchasing", "influencer"] as const).map((r) => {
+                      const n = byRole[r] || 0;
+                      if (!n) return null;
+                      const st = roleStyle[r];
+                      return (
+                        <span key={r} className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium", st.badge)}>
+                          {roleLabel[r]} · {n}
+                        </span>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
-            );
-          })}
-        </div>
+
+              <CardContent className="p-5">
+                {uncovered ? (
+                  <div className="rounded-lg border border-dashed border-border bg-muted/20 p-4 text-center">
+                    <p className="text-sm text-muted-foreground">Aucun contact sur cette entité.</p>
+                    <p className="text-xs text-muted-foreground mt-1">Objectif : trouver au moins 1 champion + 1 sponsor + 1 opérationnel.</p>
+                  </div>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {top3.map((c) => {
+                      const r = (c.decision_role || "unknown").toLowerCase();
+                      const st = roleStyle[r] || roleStyle.unknown;
+                      return (
+                        <div
+                          key={c.id}
+                          className={cn(
+                            "rounded-xl border border-border bg-card shadow-sm overflow-hidden",
+                            st.bar
+                          )}
+                        >
+                          <div className="p-3">
+                            <div className="flex items-start gap-3">
+                              <div className="h-9 w-9 rounded-full bg-muted flex items-center justify-center shrink-0">
+                                <span className="text-[11px] font-semibold text-muted-foreground">{initials(c.full_name)}</span>
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-sm font-semibold truncate">{c.full_name}</div>
+                                <div className="text-xs text-muted-foreground line-clamp-2">{c.title || "—"}</div>
+                                <div className="flex items-center gap-2 mt-2">
+                                  <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium", st.badge)}>
+                                    {roleLabel[r] || r}
+                                  </span>
+                                  {typeof c.priority === "number" && (
+                                    <span className="text-[10px] text-muted-foreground font-mono">P{c.priority}</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
     </div>
   );
@@ -637,37 +776,226 @@ function TabPlanHebdo({ raw }: { raw: unknown }) {
   );
 }
 
-function TabEvaluation({ raw }: { raw: unknown }) {
-  const data = raw && typeof raw === "object" && "evaluationCompte" in raw ? (raw as { evaluationCompte?: unknown }).evaluationCompte : null;
-  const d = data && typeof data === "object" ? data as { goNoGo?: unknown; scoreGlobal?: unknown; justification?: unknown; recommandation?: unknown } : null;
-  if (!d) return (
-    <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-center">
-      <p className="text-sm text-muted-foreground">Aucune évaluation pour ce compte.</p>
-      <p className="text-xs text-muted-foreground mt-1">Relancez une analyse pour obtenir un GO/NO-GO et une justification.</p>
-      <Button variant="outline" size="sm" className="mt-4" onClick={() => window.location.href = "/search"}>Nouvelle recherche</Button>
-    </div>
-  );
-  const goNoGo = String(safeString(d.goNoGo)).toUpperCase();
+function TabEvaluation({ raw, account, onboardingData }: { raw: unknown; account: AccountAnalysis; onboardingData?: any }) {
+  // Source de vérité : le score & la justification affichés dans le bandeau général
+  const scoreTop = typeof account.priority_score === "number" ? account.priority_score : Number(account.priority_score ?? 0) || 0;
+  const topJustification =
+    typeof account.priority_justification === "string"
+      ? account.priority_justification
+      : (account.priority_justification as { overall?: string } | null)?.overall ?? "";
+
+  const evalData = raw && typeof raw === "object" && "evaluationCompte" in raw ? (raw as { evaluationCompte?: unknown }).evaluationCompte : null;
+  const d = evalData && typeof evalData === "object"
+    ? (evalData as { goNoGo?: unknown; scoreGlobal?: unknown; justification?: unknown; recommandation?: unknown })
+    : null;
+
+  const evalScore = d?.scoreGlobal != null ? Number(d.scoreGlobal) : null;
+  const score = scoreTop || evalScore || 0;
+  const goNoGoRaw = safeString(d?.goNoGo);
+  const goNoGo = (goNoGoRaw && goNoGoRaw !== "—") ? String(goNoGoRaw).toUpperCase() : (score >= 7 ? "GO" : "NO-GO");
   const isGo = goNoGo === "GO";
+  const mismatch = evalScore != null && Math.round(evalScore) !== Math.round(scoreTop);
+
+  const size = safeString(onboardingData?.size);
+  const team = safeString(onboardingData?.salesTeamSize);
+  const challenge = safeString(onboardingData?.mainChallenge);
+
+  const rawPriorityJustification = raw && typeof raw === "object" && "priorityJustification" in raw
+    ? (raw as { priorityJustification?: any }).priorityJustification
+    : null;
+  const factors = rawPriorityJustification && typeof rawPriorityJustification === "object"
+    ? ([
+        { key: "urgency", label: "Urgence", hint: "Signaux et timing", icon: "⚡" },
+        { key: "accessibility", label: "Accessibilité", hint: "Portes d’entrée", icon: "🚪" },
+        { key: "competition", label: "Concurrence", hint: "Référencement / ESN en place", icon: "🏁" },
+        { key: "alignment", label: "Fit ESN", hint: "Adéquation offres/personas", icon: "🎯" },
+        { key: "potential", label: "Potentiel", hint: "Valeur & périmètre", icon: "💎" },
+      ] as const).map((f) => {
+        const obj = (rawPriorityJustification as any)[f.key];
+        const scoreF = obj?.score != null ? Number(obj.score) : null;
+        const justifF = safeString(obj?.justification);
+        return { ...f, score: scoreF, justification: justifF };
+      })
+    : [];
+
+  const summaryBullets: string[] = [];
+  if (size && size !== "—") summaryBullets.push(`Taille ESN : ${size} → approche recommandée alignée sur vos contraintes.`)
+  if (team && team !== "—") summaryBullets.push(`Équipe commerciale : ${team} → plan priorisé pour maximiser le ratio effort/résultat.`)
+  if (challenge && challenge !== "—") summaryBullets.push(`Défi principal : ${challenge} → messages/angles orientés conversion.`)
+
+  const finalJustification = topJustification || safeString(d?.justification) || "—";
+  const finalRecommendation = safeString(d?.recommandation);
+
+  const esnSynergiesRaw =
+    raw && typeof raw === "object" && "esnSynergies" in raw
+      ? (raw as { esnSynergies?: any }).esnSynergies
+      : null;
+  const esnSynergies: { name?: string; certainty?: number; presenceType?: string; why?: string; adviceForUser?: string }[] =
+    Array.isArray(esnSynergiesRaw) ? esnSynergiesRaw : [];
+
   return (
     <div className="space-y-6">
-      <Card className={`border-2 rounded-xl ${isGo ? "border-bellum-success/50 bg-bellum-success/5" : "border-destructive/30 bg-destructive/5"}`}>
-        <CardContent className="p-6 space-y-2">
-          <p className="text-sm font-semibold">Recommandation : <span className={isGo ? "text-bellum-success" : "text-destructive"}>{safeString(d.goNoGo)}</span></p>
-          <p className="text-2xl font-bold">Score global : {d.scoreGlobal != null ? String(d.scoreGlobal) : "—"}/10</p>
-        </CardContent>
-      </Card>
-      <Card className="border-border card-neutral rounded-xl">
-        <CardContent className="p-6 space-y-3">
-          <h3 className="font-display text-sm font-semibold">Justification</h3>
-          <p className="text-sm text-foreground/90 whitespace-pre-line">{safeString(d.justification)}</p>
-        </CardContent>
-      </Card>
-      {d.recommandation != null && safeString(d.recommandation) !== "—" && (
+      {/* KPI header */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className={`border-2 rounded-xl ${isGo ? "border-bellum-success/40 bg-bellum-success/5" : "border-destructive/25 bg-destructive/5"}`}>
+          <CardContent className="p-6">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Recommandation</p>
+            <div className="flex items-center gap-2 mt-2">
+              <Badge variant="secondary" className={cn("text-xs", isGo ? "bg-bellum-success/10 text-bellum-success border-bellum-success/20" : "bg-destructive/10 text-destructive border-destructive/20")}>
+                {isGo ? "GO" : "NO-GO"}
+              </Badge>
+              <span className="text-xs text-muted-foreground">— décision rapide</span>
+            </div>
+            {mismatch && (
+              <p className="text-[10px] text-muted-foreground mt-3">
+                Incohérence détectée : l&apos;onglet est synchronisé sur le score principal du bandeau.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
         <Card className="border-border card-neutral rounded-xl">
           <CardContent className="p-6">
-            <h3 className="font-display text-sm font-semibold mb-2">Recommandation</h3>
-            <p className="text-sm text-foreground/90 whitespace-pre-line">{safeString(d.recommandation)}</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Score global</p>
+            <div className="flex items-end gap-3 mt-2">
+              <p className="text-3xl font-bold">{score || "—"}</p>
+              <p className="text-sm text-muted-foreground mb-1">/10</p>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">Cohérent avec le score du bandeau en haut.</p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border card-neutral rounded-xl">
+          <CardContent className="p-6">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Lecture pour votre ESN</p>
+            {summaryBullets.length > 0 ? (
+              <ul className="mt-3 space-y-2 text-sm">
+                {summaryBullets.slice(0, 3).map((b, i) => (
+                  <li key={i} className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 text-muted-foreground mt-0.5" />
+                    <span className="text-foreground/90">{b}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground mt-3">Complétez votre profil ESN pour une lecture encore plus personnalisée.</p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Factors table */}
+      {factors.length > 0 && (
+        <Card className="border-border card-neutral rounded-xl">
+          <CardContent className="p-6 space-y-4">
+            <div>
+              <h3 className="font-display text-sm font-semibold">Facteurs du score</h3>
+              <p className="text-xs text-muted-foreground mt-1">Décomposition : ce qui tire le score vers le haut (ou vers le bas) et pourquoi.</p>
+            </div>
+
+            <div className="table-premium-wrapper">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="text-xs font-semibold">Facteur</TableHead>
+                    <TableHead className="text-xs font-semibold w-24">Score</TableHead>
+                    <TableHead className="text-xs font-semibold">Justification</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {factors.map((f) => (
+                    <TableRow key={f.key} className="table-row-hover">
+                      <TableCell className="align-top">
+                        <div className="flex items-start gap-2">
+                          <span className="text-sm">{f.icon}</span>
+                          <div>
+                            <div className="text-sm font-medium">{f.label}</div>
+                            <div className="text-xs text-muted-foreground">{f.hint}</div>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="align-top">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-sm font-semibold">{f.score ?? "—"}</span>
+                          <div className="h-2 w-16 rounded-full bg-secondary overflow-hidden">
+                            <div className="h-full bg-foreground/70" style={{ width: `${Math.max(0, Math.min(10, f.score ?? 0)) * 10}%` }} />
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="align-top">
+                        <p className="text-sm text-foreground/85 whitespace-pre-line">{f.justification && f.justification !== "—" ? f.justification : "—"}</p>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Main justification */}
+      <Card className="border-border card-neutral rounded-xl">
+        <CardContent className="p-6 space-y-3">
+          <h3 className="font-display text-sm font-semibold">Justification (aérée)</h3>
+          <div className="prose prose-sm dark:prose-invert max-w-none">
+            <p className="text-sm text-foreground/90 whitespace-pre-line leading-relaxed">
+              {finalJustification}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Recommendation */}
+      {finalRecommendation && finalRecommendation !== "—" && (
+        <Card className="border-border card-neutral rounded-xl">
+          <CardContent className="p-6 space-y-2">
+            <h3 className="font-display text-sm font-semibold">Recommandation (action)</h3>
+            <p className="text-sm text-foreground/90 whitespace-pre-line leading-relaxed">{finalRecommendation}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {esnSynergies.length > 0 && (
+        <Card className="border-border card-neutral rounded-xl">
+          <CardContent className="p-6 space-y-3">
+            <h3 className="font-display text-sm font-semibold">ESN déjà (probablement) en place</h3>
+            <p className="text-xs text-muted-foreground">
+              Liste d&apos;ESN qui semblent déjà intervenir sur ce compte (ou l&apos;avoir fait). Objectif : créer des synergies au lieu d&apos;arriver totalement en frontal.
+            </p>
+            <div className="table-premium-wrapper">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="text-xs font-semibold">ESN</TableHead>
+                    <TableHead className="text-xs font-semibold w-24">Certitude</TableHead>
+                    <TableHead className="text-xs font-semibold">Pourquoi</TableHead>
+                    <TableHead className="text-xs font-semibold">Conseil pour vous</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {esnSynergies.map((e, i) => (
+                    <TableRow key={i} className="table-row-hover align-top">
+                      <TableCell className="text-sm font-medium">{safeString(e.name)}</TableCell>
+                      <TableCell className="text-sm">
+                        {typeof e.certainty === "number" ? `${Math.round(e.certainty)} %` : "—"}
+                        {e.presenceType && (
+                          <div className="mt-1 text-[11px] text-muted-foreground">
+                            {safeString(e.presenceType)}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground whitespace-pre-line">
+                        {safeString(e.why)}
+                      </TableCell>
+                      <TableCell className="text-sm text-foreground/90 whitespace-pre-line">
+                        {safeString(e.adviceForUser)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -1053,7 +1381,7 @@ export default function AccountDetail() {
         <TabsContent value="ouvrir" className="mt-6"><TabOuvrirCompte raw={account.raw_analysis} /></TabsContent>
         <TabsContent value="offres" className="mt-6"><TabOffresConstruire raw={account.raw_analysis} /></TabsContent>
         <TabsContent value="plan-hebdo" className="mt-6"><TabPlanHebdo raw={account.raw_analysis} /></TabsContent>
-        <TabsContent value="evaluation" className="mt-6"><TabEvaluation raw={account.raw_analysis} /></TabsContent>
+        <TabsContent value="evaluation" className="mt-6"><TabEvaluation raw={account.raw_analysis} account={account} onboardingData={profile?.onboarding_data} /></TabsContent>
         <TabsContent value="messages" className="mt-6"><TabMessages contacts={contacts as Contact[]} /></TabsContent>
       </Tabs>
       </div>

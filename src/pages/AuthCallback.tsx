@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, Zap } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Link } from "react-router-dom";
+import { BellumLogo } from "@/components/BellumLogo";
 
 /**
  * Page de callback OAuth (Google, etc.).
@@ -93,9 +94,7 @@ export default function AuthCallback() {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 px-6">
         <Link to="/" className="inline-flex items-center gap-2">
-          <div className="h-9 w-9 flex items-center justify-center rounded-lg bg-primary">
-            <Zap className="h-4.5 w-4.5 text-primary-foreground" />
-          </div>
+          <BellumLogo size={36} className="rounded-lg" />
           <span className="font-display text-xl font-bold">Bellum AI</span>
         </Link>
         <p className="text-sm text-destructive text-center max-w-sm">{errorMessage}</p>
@@ -108,9 +107,7 @@ export default function AuthCallback() {
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
       <Link to="/" className="inline-flex items-center gap-2">
-        <div className="h-9 w-9 flex items-center justify-center rounded-lg bg-primary">
-          <Zap className="h-4.5 w-4.5 text-primary-foreground" />
-        </div>
+        <BellumLogo size={36} className="rounded-lg" />
         <span className="font-display text-xl font-bold">Bellum AI</span>
       </Link>
       <Loader2 className="h-8 w-8 animate-spin text-primary" />
