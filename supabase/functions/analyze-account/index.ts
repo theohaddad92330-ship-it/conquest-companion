@@ -52,8 +52,35 @@ serve(async (req) => {
     const { data: profile } = await supabase.from('profiles').select('*').eq('user_id', user.id).single()
     const onboardingData = profile?.onboarding_data ?? {}
 
-    // Lancer l'analyse en background
-    EdgeRuntime.waitUntil(processAnalysis(supabase, account.id, user.id, companyName, userContext, onboardingData, traceId))
+    // Lancer l'analyse en background avec timeout global 8 min (évite blocage sans retour)
+    const ANALYSIS_TIMEOUT_MS = 8 * 60 * 1000
+    EdgeRuntime.waitUntil(
+      (async () => {
+        const timeoutPromise = new Promise<never>((_, rej) =>
+          setTimeout(() => rej(new Error('TIMEOUT_8MIN')), ANALYSIS_TIMEOUT_MS)
+        )
+        try {
+          await Promise.race([
+            processAnalysis(supabase, account.id, user.id, companyName, userContext, onboardingData, traceId),
+            timeoutPromise,
+          ])
+        } catch (e) {
+          if (e instanceof Error && e.message === 'TIMEOUT_8MIN') {
+            await supabase
+              .from('accounts')
+              .update({
+                status: 'error',
+                error_message: "L'analyse a dépassé le temps maximum (8 min). Réessayez ou lancez une recherche plus ciblée.",
+              })
+              .eq('id', account.id)
+              .catch(() => {})
+            console.error(JSON.stringify({ event: 'analysis_timeout', traceId, accountId: account.id }))
+          } else {
+            throw e
+          }
+        }
+      })()
+    )
 
     return json({ accountId: account.id, status: 'analyzing' })
   } catch (err) {
@@ -133,44 +160,46 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
     console.log(JSON.stringify({ event: 'phase1_saved', traceId, seconds: Math.round((Date.now() - t0) / 1000) }))
 
     // ════════════════════════════════════════
-    // PHASE 2 — LINKEDIN SCRAPING (Apify)
+    // PHASE 2 — LINKEDIN SCRAPING (Apify) + fallback si échec ou 0 résultat
     // ════════════════════════════════════════
     let rawContacts: any[] = []
     let apifyWorked = false
 
     if (APIFY_API_TOKEN) {
-      // 2a. Company Employees (principal) — filtre géo si profil France/Europe uniquement
-      const companyEmployees = await apify_CompanyEmployees(companyName, research.linkedinSearchKeywords, traceId, braveResults.linkedinCompanyUrl, onboardingData)
-      if (companyEmployees.length > 0) {
-        rawContacts.push(...companyEmployees)
-        apifyWorked = true
-      }
-
-      // 2b. Profile Search (complémentaire) — si Company Employees n'a pas assez de résultats
-      if (rawContacts.length < 30 && research.linkedinSearchKeywords) {
-        const searchResults = await apify_ProfileSearch(companyName, research.linkedinSearchKeywords, traceId, onboardingData)
-        if (searchResults.length > 0) {
-          rawContacts.push(...searchResults)
+      try {
+        const companyEmployees = await apify_CompanyEmployees(companyName, research.linkedinSearchKeywords, traceId, braveResults.linkedinCompanyUrl, onboardingData)
+        if (companyEmployees.length > 0) {
+          rawContacts.push(...companyEmployees)
           apifyWorked = true
         }
+        if (rawContacts.length < 30 && research.linkedinSearchKeywords) {
+          const searchResults = await apify_ProfileSearch(companyName, research.linkedinSearchKeywords, traceId, onboardingData)
+          if (searchResults.length > 0) {
+            rawContacts.push(...searchResults)
+            apifyWorked = true
+          }
+        }
+        const seen = new Set<string>()
+        rawContacts = rawContacts.filter((c: any) => {
+          const name = `${c.firstName || ''} ${c.lastName || ''}`.trim() || c.fullName || c.name || ''
+          const key = (c.linkedinUrl || c.url || name || `idx-${seen.size}`).toLowerCase()
+          if (seen.has(key)) return false
+          seen.add(key)
+          return true
+        })
+      } catch (apifyErr) {
+        console.log(JSON.stringify({ event: 'apify_error_fallback', traceId, error: apifyErr instanceof Error ? apifyErr.message : 'unknown', message: 'Apify a échoué — fallback web + génération' }))
+        rawContacts = []
       }
-
-      // Dédupliquer par LinkedIn URL ou nom
-      const seen = new Set<string>()
-      rawContacts = rawContacts.filter((c: any) => {
-        const name = `${c.firstName || ''} ${c.lastName || ''}`.trim() || c.fullName || c.name || ''
-        const key = (c.linkedinUrl || c.url || name || `idx-${seen.size}`).toLowerCase()
-        if (seen.has(key)) return false
-        seen.add(key)
-        return true
-      })
-
+      if (rawContacts.length === 0) {
+        console.log(JSON.stringify({ event: 'apify_called_zero_fallback', traceId, message: 'Apify invoqué mais 0 contacts — fallback web + génération (min 35 contacts)' }))
+      }
       console.log(JSON.stringify({ event: 'phase2_done', traceId, totalContacts: rawContacts.length, apifyWorked }))
     } else {
       console.log(JSON.stringify({ event: 'phase2_skipped', traceId, reason: 'no_apify_token' }))
     }
 
-    // Fallback : personnes réelles extraites du contenu web (Brave + Firecrawl) par Claude en Phase 1
+    // Fallback : personnes réelles extraites du contenu web (Brave + Firecrawl) par Claude en Phase 1 — utilisé aussi quand Apify a été appelé mais a retourné 0
     let fromWebMentioned = false
     if (rawContacts.length === 0 && Array.isArray(research.peopleMentioned) && research.peopleMentioned.length > 0) {
       rawContacts = research.peopleMentioned.map((p: any) => ({
@@ -193,26 +222,51 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
     const contactsMeta = enrichResult.meta
     console.log(JSON.stringify({ event: 'phase3_done', traceId, enrichedCount: enrichedContacts.length }))
 
+    // Normaliser les champs message pour la DB (JSONB attend un objet ou null)
+    function normMessage(m: any): { subject: string; body: string } | null {
+      if (!m) return null
+      if (typeof m === 'object' && m !== null && (m.subject != null || m.body != null)) {
+        return { subject: String(m.subject ?? ''), body: String(m.body ?? '') }
+      }
+      if (typeof m === 'string') return { subject: '', body: m.slice(0, 2000) }
+      return null
+    }
+    function normLinkedinMessage(m: any): string | null {
+      if (m == null) return null
+      return typeof m === 'string' ? m.slice(0, 3000) : null
+    }
+    const allowedRoles = ['sponsor', 'champion', 'operational', 'purchasing', 'blocker', 'influencer', 'unknown'] as const
+    function normRole(r: any): string {
+      const s = String(r || 'unknown').toLowerCase()
+      if (allowedRoles.includes(s)) return s
+      if (['achats', 'achat'].includes(s)) return 'purchasing'
+      if (['decideur', 'c-level', 'clevel', 'sponsor'].includes(s)) return 'sponsor'
+      if (['operationnel', 'ops'].includes(s)) return 'operational'
+      return 'unknown'
+    }
+
     // Sauvegarder les contacts
     if (enrichedContacts.length > 0) {
-      await supabase.from('contacts').insert(
-        enrichedContacts.map((c: any, i: number) => ({
-          account_id: accountId, user_id: userId,
-          full_name: c.name || `Contact ${i + 1}`,
-          title: c.title || null,
-          entity: c.entity || null,
-          decision_role: (c.role || 'unknown').toLowerCase(),
-          priority: c.priority || 3,
-          email: c.email || null,
-          linkedin_url: c.linkedinUrl || c.linkedin || null,
-          profile_summary: c.summary || null,
-          why_contact: c.whyContact || null,
-          email_message: c.emailMessage || null,
-          linkedin_message: c.linkedinMessage || null,
-          followup_message: c.followupMessage || null,
-          source: apifyWorked ? 'linkedin_apify' : (fromWebMentioned ? 'web_mentioned' : 'ai_generated'),
-        }))
-      )
+      const rows = enrichedContacts.map((c: any, i: number) => ({
+        account_id: accountId, user_id: userId,
+        full_name: String(c.name || `Contact ${i + 1}`).slice(0, 500),
+        title: c.title ? String(c.title).slice(0, 500) : null,
+        entity: c.entity ? String(c.entity).slice(0, 300) : null,
+        decision_role: normRole(c.role),
+        priority: Math.min(5, Math.max(1, Number(c.priority) || 3)),
+        email: c.email ? String(c.email).slice(0, 320) : null,
+        linkedin_url: c.linkedinUrl || c.linkedin ? String(c.linkedinUrl || c.linkedin).slice(0, 500) : null,
+        profile_summary: c.summary ? String(c.summary).slice(0, 2000) : null,
+        why_contact: c.whyContact ? String(c.whyContact).slice(0, 1000) : null,
+        email_message: normMessage(c.emailMessage),
+        linkedin_message: normLinkedinMessage(c.linkedinMessage),
+        followup_message: normMessage(c.followupMessage),
+        source: apifyWorked ? 'linkedin_apify' : (fromWebMentioned ? 'web_mentioned' : 'ai_generated'),
+      }))
+      const { error: insertErr } = await supabase.from('contacts').insert(rows)
+      if (insertErr) {
+        console.error(JSON.stringify({ event: 'contacts_insert_error', traceId, error: insertErr.message }))
+      }
     }
 
     // Mettre à jour raw_analysis avec organigramme et chaîne de décision
@@ -293,13 +347,16 @@ async function searchBrave(companyName: string, onboardingData: any, traceId: st
     `${companyName} prestataire ESN budget IT investissement`,
     `${companyName} site:linkedin.com/company`,
     `${companyName} DSI directeur digital nommé nomination`,
+    `${companyName} équipe direction dirigeants management ${year}`,
+    `${companyName} annuaire organigramme DSI CTO RSSI`,
+    `${companyName} nomination directeur chef de projet IT`,
   ]
   if (offers) queries.push(`${companyName} ${offers} programme projet`)
   if (!hasInternational) queries.push(`${companyName} France siège filiales`)
 
   try {
     const all = await Promise.allSettled(queries.map(q =>
-      fetch(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=10`, {
+      fetch(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=15`, {
         headers: { 'X-Subscription-Token': BRAVE_API_KEY },
         signal: AbortSignal.timeout(10000),
       }).then(r => r.json()).then(d => d.web?.results || [])
@@ -327,10 +384,11 @@ async function searchBrave(companyName: string, onboardingData: any, traceId: st
 async function scrapePages(urls: string[], traceId: string): Promise<string> {
   if (!FIRECRAWL_API_KEY || urls.length === 0) { console.log(JSON.stringify({ event: 'firecrawl_skip', traceId })); return '' }
 
-  // Prioriser et filtrer les URLs
+  // Prioriser et filtrer les URLs — plus de pages pour maximiser les noms (annuaires, équipes, nominations)
   const skip = ['linkedin.com', 'facebook.com', 'twitter.com', 'youtube.com']
-  const filtered = urls.filter(u => !skip.some(s => u.toLowerCase().includes(s))).slice(0, 8)
+  const filtered = urls.filter(u => !skip.some(s => u.toLowerCase().includes(s))).slice(0, 15)
 
+  const CHARS_PER_PAGE = 6000
   try {
     const all = await Promise.allSettled(filtered.map(url =>
       fetch('https://api.firecrawl.dev/v1/scrape', {
@@ -338,7 +396,7 @@ async function scrapePages(urls: string[], traceId: string): Promise<string> {
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${FIRECRAWL_API_KEY}` },
         body: JSON.stringify({ url, formats: ['markdown'], onlyMainContent: true }),
         signal: AbortSignal.timeout(15000),
-      }).then(r => r.json()).then(d => d.data?.markdown ? `--- SOURCE: ${url} ---\n${d.data.markdown.slice(0, 5000)}` : null)
+      }).then(r => r.json()).then(d => d.data?.markdown ? `--- SOURCE: ${url} ---\n${d.data.markdown.slice(0, CHARS_PER_PAGE)}` : null)
     ))
     const contents = all.filter(r => r.status === 'fulfilled' && r.value).map(r => (r as any).value)
     const result = contents.join('\n\n')
@@ -385,7 +443,7 @@ RÈGLES :
 
 ANTI-HALLUCINATION : chaque donnée sourcée. Si non trouvé → "Non détecté". Ne jamais inventer.
 
-PEOPLEMENTIONED : repère TOUTES les personnes RÉELLES citées dans le contenu (nominations, interviews, communiqués). name, title, context, source. Ne pas inventer de noms.
+PEOPLEMENTIONED : extraire TOUTES les personnes RÉELLES mentionnées dans le contenu (nominations, interviews, communiqués, listes, organigrammes). TOUS NIVEAUX : C-level, directeurs, chefs de projet, achats, RSSI, responsables métier, pas seulement les C-level. Viser 30 à 80 noms si le contenu le permet. Chaque entrée : name, title, context, source. Ne pas inventer de noms.
 
 Réponds UNIQUEMENT en JSON valide. Pas de texte avant/après. Pas de backticks.`
 
@@ -404,6 +462,7 @@ RÈGLES CRITIQUES :
 - esnSynergies : identifier les ESN (SSII, cabinets) CITÉES ou fortement probables déjà en place sur le compte (compte-rendus, références, partenariats, offres, annonces). Pour chacune : nom, type de présence (rang 1, niche, partenaire), niveau de certitude (0-100), pourquoi tu le penses, et conseil concret pour l'utilisateur (synergie, sous-traitance, co-traitance, entrée par eux). Adapter ces conseils à la taille de l'ESN utilisatrice (petite ESN = privilégier synergies / sous-traitance, pas frontal).
 - Rechercher dans les données : baisses de budget IT, blocages ou perte de référencement rang 1, difficultés fournisseurs, autres filiales connues (ex. RESG pour SocGen).
 - priorityScore : DOIT refléter la difficulté pour CE profil. Ex. si l'utilisateur a 0-20 consultants (petite ESN), ouvrir un grand compte = très dur → score 4-6 pas 9. Si 200+ consultants et bon alignement → score 8-9. Justification détaillée dans priorityJustification.overall.
+- peopleMentioned : lister TOUTES les personnes réelles trouvées dans le contenu (tous niveaux). Plus il y a de noms dans les pages scrapées, plus tu dois en extraire (viser 30-80). Ne pas s'arrêter aux C-level.
 
 Produis ce JSON :
 {
@@ -450,12 +509,14 @@ Produis ce JSON :
 // ============================================================
 // CLAUDE APPEL 2 — BELLUM-CONTACTS
 // ============================================================
-const MAX_RAW_CONTACTS_FOR_PROMPT = 35
+const MAX_RAW_CONTACTS_FOR_PROMPT = 80
+const TARGET_MIN_CONTACTS = 35 // minimum garanti par compte (sans Apify = fallback web + génération)
 
 function parseContactsResult(result: any): { contacts: any[], meta: any } {
-  const contacts = result?.contacts ?? result?.Contacts ?? (Array.isArray(result) ? result : [])
+  if (!result || typeof result !== 'object') return { contacts: [], meta: null }
+  const contacts = result.contacts ?? result.Contacts ?? (Array.isArray(result) ? result : result.data?.contacts ?? [])
   const list = Array.isArray(contacts) ? contacts : []
-  const meta = (result?.organigramme || result?.decisionChain) ? {
+  const meta = (result.organigramme || result.decisionChain) ? {
     organigramme: result.organigramme,
     decisionChain: result.decisionChain,
     uncoveredZones: result.uncoveredZones,
@@ -491,7 +552,7 @@ Angles : ${JSON.stringify(anglesTitles)}
 Pains : ${painsStr}
 
 RÈGLES CONTACTS :
-- Diversité : sponsors, champions, operational, purchasing, influencer. Prioriser les personas cibles du profil.
+- Objectif : au moins ${TARGET_MIN_CONTACTS} contacts par compte. PAS QUE DES C-LEVEL : varier impérativement — sponsors (quelques-uns), champions (directeurs, heads), operational (chefs de projet, tech leads), purchasing (achats IT), influencer (RSSI, experts). Majorité champions + operational + achats pour avoir des portes d'entrée actionnables.
 ${geoOnlyFranceEU ? '- GÉO : privilégier contacts France / Europe uniquement.' : ''}
 
 MESSAGES — CRÉER DE L'ATTENTION (décideurs B2B sursollicités) :
@@ -522,18 +583,29 @@ Réponds UNIQUEMENT en JSON valide : {"contacts": [{ "name", "title", "entity", 
 ${JSON.stringify(simplified, null, 2)}`
   } else if (fromWebMentioned && rawContacts.length > 0) {
     const limited = rawContacts.slice(0, MAX_RAW_CONTACTS_FOR_PROMPT)
-    userPrompt = `Voici des personnes RÉELLES extraites d'articles et pages web pour "${companyName}". CONSERVE leurs noms et postes exacts. Enrichis chaque fiche : entity (filiale/BU), role, priority, summary, whyContact, linkedinMessage, emailMessage, followupMessage. linkedinUrl et email peuvent rester vides si non connus. Retourne le même format JSON : {"contacts": [...], "organigramme": [], "decisionChain": [], "uncoveredZones": []}.
+    const needCompletion = limited.length < TARGET_MIN_CONTACTS
+    const targetTotal = needCompletion ? TARGET_MIN_CONTACTS : limited.length
+    if (needCompletion) {
+      userPrompt = `Voici des personnes RÉELLES extraites du web pour "${companyName}" (${limited.length} noms). CONSERVE leurs noms et postes. Enrichis CHAQUE fiche : entity, role, priority, summary, whyContact, linkedinMessage, emailMessage, followupMessage. Puis complète avec des profils types suggérés (noms fictifs, postes réalistes, TOUS NIVEAUX : pas que C-level — champions, opérationnels, achats) pour atteindre au moins ${targetTotal} contacts. Pour les compléments, mets dans summary "Profil type suggéré (non sourcé web)".
+Retourne le même format JSON : {"contacts": [...], "organigramme": [], "decisionChain": [], "uncoveredZones": []}.
 
 ${JSON.stringify(limited, null, 2)}`
+    } else {
+      userPrompt = `Voici des personnes RÉELLES extraites du web pour "${companyName}" (${limited.length} noms). CONSERVE leurs noms et postes exacts. Enrichis UNIQUEMENT ces contacts : pour chacun, remplis entity (filiale/BU), role, priority, summary, whyContact, linkedinMessage, emailMessage, followupMessage. linkedinUrl et email peuvent rester vides. NE GÉNÈRE PAS d'autres contacts — seulement enrichir cette liste.
+Retourne le même format JSON : {"contacts": [...], "organigramme": [], "decisionChain": [], "uncoveredZones": []}.
+
+${JSON.stringify(limited, null, 2)}`
+    }
   } else {
-    userPrompt = `Génère des contacts RÉALISTES (noms fictifs, postes/entités cohérents) pour "${companyName}".
+    userPrompt = `Génère au moins ${TARGET_MIN_CONTACTS} contacts RÉALISTES (noms fictifs, postes/entités cohérents) pour "${companyName}".
 Entités : ${entitiesStr}
-Pour chaque entité : 1 décideur, 1 champion, 1 opérationnel min. + Achats IT, Sécurité, Data si pertinent.
-Summary : "profil type suggéré" si fictif.
+DIVERSITÉ OBLIGATOIRE — pas que des C-level : pour chaque entité, génère des décideurs (2-3), des champions (directeurs, heads), des opérationnels (chefs de projet, tech leads), des achats IT, des influenceurs (RSSI, experts). Majorité champions + opérationnels + achats. Chaque contact avec linkedinMessage, emailMessage, followupMessage (courts et personnalisés).
+Summary : "profil type suggéré" pour chaque contact.
 Même format JSON : {"contacts": [...], "organigramme": [], "decisionChain": [], "uncoveredZones": []}.`
   }
 
-  let result = await callClaudeAPI(systemPrompt, userPrompt, 12000, traceId, 'contacts')
+  // Appel principal avec timeout long (phase contacts = grosse réponse)
+  let result = await callClaudeAPI(systemPrompt, userPrompt, 16000, traceId, 'contacts', CLAUDE_CONTACTS_TIMEOUT_MS)
   if (result) {
     const parsed = parseContactsResult(result)
     if (parsed.contacts.length > 0) {
@@ -542,11 +614,30 @@ Même format JSON : {"contacts": [...], "organigramme": [], "decisionChain": [],
     }
   }
 
-  // Retry avec prompt minimal pour garantir au moins quelques contacts
+  // Fallback 1 : si on avait des contacts web/Apify, enrichir seulement un sous-ensemble (réponse plus courte = plus fiable)
+  if (rawContacts.length > 0) {
+    console.log(JSON.stringify({ event: 'claude_contacts_fallback_partial', traceId, rawCount: rawContacts.length }))
+    const subset = rawContacts.slice(0, 25).map((c: any) => ({
+      name: c.name || `${c.firstName || ''} ${c.lastName || ''}`.trim(),
+      title: c.title || c.headline,
+      about: (c.about || c.context || '').slice(0, 200),
+    }))
+    const fallbackPrompt = `Enrichis ces ${subset.length} contacts pour "${companyName}". Pour chacun : entity, role, priority, summary, whyContact, linkedinMessage, emailMessage (subject + body), followupMessage (subject + body). Conserve nom et poste. Si tu en produis moins de ${TARGET_MIN_CONTACTS}, complète avec des profils types (champions, opérationnels, achats) jusqu'à au moins ${TARGET_MIN_CONTACTS}. JSON : {"contacts": [...]}.`
+    const fallbackResult = await callClaudeAPI(systemPrompt, fallbackPrompt, 12000, traceId, 'contacts_fallback', 90000)
+    if (fallbackResult) {
+      const parsed = parseContactsResult(fallbackResult)
+      if (parsed.contacts.length > 0) {
+        console.log(JSON.stringify({ event: 'claude_contacts_fallback_ok', traceId, count: parsed.contacts.length }))
+        return { contacts: parsed.contacts, meta: parsed.meta }
+      }
+    }
+  }
+
+  // Fallback 2 : génération minimale (profils types avec messages)
   console.log(JSON.stringify({ event: 'claude_contacts_retry', traceId, reason: result ? 'empty_list' : 'null_response' }))
-  const fallbackSystem = `Tu es BELLUM. Génère des contacts B2B en JSON uniquement. Format : {"contacts": [{"name":"Prénom Nom","title":"Poste","entity":"Entité","role":"champion","priority":3,"summary":"...","whyContact":"...","linkedinUrl":"","email":"prenom.nom@domaine","linkedinMessage":"...","emailMessage":{"subject":"...","body":"..."},"followupMessage":{"subject":"RE:...","body":"..."}}]}. Pas de texte avant/après.`
-  const fallbackUser = `Génère 12 à 18 contacts pour "${companyName}". Secteur: ${research.sector || 'N/A'}. Entités: ${entitiesStr}. Noms fictifs, postes réalistes.`
-  const retryResult = await callClaudeAPI(fallbackSystem, fallbackUser, 8000, traceId, 'contacts_retry')
+  const fallbackSystem = `Tu es BELLUM. Génère des contacts B2B en JSON uniquement. Au moins ${TARGET_MIN_CONTACTS} contacts. Diversité : pas que C-level — champions, operational, purchasing, influencer. Chaque contact : name, title, entity, role, priority, summary, whyContact, linkedinMessage, emailMessage {subject, body}, followupMessage {subject, body}. Pas de texte avant/après.`
+  const fallbackUser = `Génère au moins ${TARGET_MIN_CONTACTS} contacts pour "${companyName}". Secteur: ${research.sector || 'N/A'}. Entités: ${entitiesStr}. Noms fictifs, postes réalistes. Tous niveaux : décideurs, directeurs, chefs de projet, achats IT, RSSI. Messages courts.`
+  const retryResult = await callClaudeAPI(fallbackSystem, fallbackUser, 10000, traceId, 'contacts_retry', 90000)
   if (retryResult) {
     const parsed = parseContactsResult(retryResult)
     if (parsed.contacts.length > 0) {
@@ -613,8 +704,12 @@ Produis :
 // ============================================================
 // APPEL CLAUDE GÉNÉRIQUE (avec vérification res.ok)
 // ============================================================
-async function callClaudeAPI(systemPrompt: string, userPrompt: string, maxTokens: number, traceId: string, phase: string): Promise<any | null> {
-  console.log(JSON.stringify({ event: `claude_${phase}_start`, traceId, systemLen: systemPrompt.length, userLen: userPrompt.length }))
+const CLAUDE_DEFAULT_TIMEOUT_MS = 120000
+const CLAUDE_CONTACTS_TIMEOUT_MS = 200000 // 3 min 20 — phase contacts (50 profils + messages) nécessite plus de temps
+
+async function callClaudeAPI(systemPrompt: string, userPrompt: string, maxTokens: number, traceId: string, phase: string, timeoutMs?: number): Promise<any | null> {
+  const timeout = timeoutMs ?? CLAUDE_DEFAULT_TIMEOUT_MS
+  console.log(JSON.stringify({ event: `claude_${phase}_start`, traceId, systemLen: systemPrompt.length, userLen: userPrompt.length, timeoutMs: timeout }))
 
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -630,7 +725,7 @@ async function callClaudeAPI(systemPrompt: string, userPrompt: string, maxTokens
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
       }),
-      signal: AbortSignal.timeout(120000),
+      signal: AbortSignal.timeout(timeout),
     })
 
     // VÉRIFICATION CRITIQUE : est-ce que Claude a répondu avec succès ?

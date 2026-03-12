@@ -29,11 +29,20 @@ const initialSteps: Step[] = [
   { label: "On prépare des messages", status: "pending" },
 ];
 
-const ESTIMATED_TOTAL_SECONDS = 120; // ~2 min pour les premières étapes
+const ESTIMATED_TOTAL_SECONDS = 120;
+const MAX_ANALYSIS_SECONDS = 8 * 60; // 8 min — au-delà le backend interrompt
+
+function formatElapsed(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (m === 0) return `${s} s`;
+  return s > 0 ? `${m} min ${s} s` : `${m} min`;
+}
 
 function formatTimeRemaining(elapsedSeconds: number, progress: number): string {
   const remaining = Math.max(0, ESTIMATED_TOTAL_SECONDS - elapsedSeconds);
-  if (remaining <= 0 || progress >= 80) return "Quasi terminé…";
+  if (progress >= 80) return "Quasi terminé…";
+  if (remaining <= 0) return "En cours…";
   if (remaining < 60) return `~${remaining} s restantes`;
   const m = Math.floor(remaining / 60);
   const s = remaining % 60;
@@ -254,10 +263,18 @@ export default function SearchPage() {
                     <p className="text-sm font-semibold">
                       {query} — {analysis.currentStep || "Analyse en cours..."}
                     </p>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-medium text-muted-foreground tabular-nums" title="Temps écoulé">
+                        Écoulé : {formatElapsed(elapsedSeconds)}
+                      </span>
                       <span className="text-xs font-medium text-primary bg-primary/10 px-2.5 py-1 rounded-full tabular-nums">
                         {formatTimeRemaining(elapsedSeconds, analysis.progress ?? 0)}
                       </span>
+                      {elapsedSeconds >= 4 * 60 && elapsedSeconds < MAX_ANALYSIS_SECONDS && (
+                        <span className="text-xs text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-1 rounded">
+                          Peut prendre jusqu’à 8 min — au-delà l’analyse s’arrête automatiquement.
+                        </span>
+                      )}
                       <Button
                         variant="outline"
                         size="sm"

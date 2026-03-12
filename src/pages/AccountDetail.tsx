@@ -5,6 +5,7 @@ import {
   ArrowLeft, Download, FileSpreadsheet, Pencil, Building2, Users,
   GitBranch, AlertTriangle, TrendingUp, Target, Mail, Linkedin,
   RotateCw, Phone, ExternalLink, Copy, CheckCircle, Star, Loader2, Circle, MapPin,
+  Gauge, DoorOpen, Lightbulb, FileCheck, ChevronRight, BarChart2, Zap, Shield, Gem, Flag,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,7 +23,7 @@ import { useAccount, useAccountActionPlan, useAccountAngles, useAccountContacts,
 import { useProfile } from "@/hooks/useProfile";
 import type { AccountAnalysis, Contact, AttackAngle, ActionPlan } from "@/types/account";
 import { generateCSV, downloadCSV } from "@/lib/export-csv";
-import { safeString } from "@/lib/utils";
+import { safeString, cn } from "@/lib/utils";
 import { FranceSitesMap } from "@/components/FranceSitesMap";
 
 const fadeUp = { hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } };
@@ -136,14 +137,14 @@ function TabFiche({ account }: { account: AccountAnalysis }) {
         </Card>
       )}
 
-      {Array.isArray(account.raw_analysis?.sitesFrance) && account.raw_analysis.sitesFrance.length > 0 && (
-        <Card className="border-border card-neutral rounded-xl">
-          <CardContent className="p-6 space-y-4">
-            <h3 className="font-display text-sm font-semibold flex items-center gap-2">
-              <MapPin className="h-4 w-4 text-muted-foreground" />Sites en France
-            </h3>
-            <p className="text-xs text-muted-foreground">Sièges et implantations identifiés, positionnés sur la carte.</p>
-            <FranceSitesMap sites={account.raw_analysis.sitesFrance as { city?: string; region?: string; type?: string; label?: string; importance?: string }[]} />
+      <Card className="border-border card-neutral rounded-xl">
+        <CardContent className="p-6 space-y-4">
+          <h3 className="font-display text-sm font-semibold flex items-center gap-2">
+            <MapPin className="h-4 w-4 text-muted-foreground" />Sites en France
+          </h3>
+          <p className="text-xs text-muted-foreground">Sièges et implantations identifiés, positionnés sur la carte. Les prochaines analyses enrichiront cette section.</p>
+          <FranceSitesMap sites={Array.isArray(account.raw_analysis?.sitesFrance) ? (account.raw_analysis.sitesFrance as { city?: string; region?: string; type?: string; label?: string; importance?: string }[]) : []} />
+          {Array.isArray(account.raw_analysis?.sitesFrance) && account.raw_analysis.sitesFrance.length > 0 && (
             <div className="rounded-lg border border-border overflow-hidden">
               <Table>
                 <TableHeader>
@@ -170,9 +171,9 @@ function TabFiche({ account }: { account: AccountAnalysis }) {
                 </TableBody>
               </Table>
             </div>
-          </CardContent>
-        </Card>
-      )}
+          )}
+        </CardContent>
+      </Card>
 
       <Card className="border-border card-neutral rounded-xl">
         <CardContent className="p-6 space-y-3">
@@ -451,26 +452,33 @@ function TabContacts({ contacts, companyName }: { contacts: Contact[]; companyNa
 }
 
 function TabOrganigramme({ account, contacts }: { account: AccountAnalysis; contacts: Contact[] }) {
-  const organigrammeLogic = account.raw_analysis?.organigrammeLogic as { hierarchy?: string; siblingEntities?: string; entryPoints?: string } | undefined;
+  const safeContacts = Array.isArray(contacts) ? contacts : [];
+  const organigrammeLogic = account.raw_analysis && typeof account.raw_analysis === "object" && "organigrammeLogic" in account.raw_analysis
+    ? (account.raw_analysis.organigrammeLogic as { hierarchy?: string; siblingEntities?: string; entryPoints?: string } | null | undefined)
+    : undefined;
+  const hasOrganigrammeLogic = organigrammeLogic && (organigrammeLogic.hierarchy || organigrammeLogic.siblingEntities || organigrammeLogic.entryPoints);
 
   const entities = useMemo(() => {
-    const fromRaw = (account.raw_analysis?.entitiesExhaustive || []).map((e: unknown) => safeString((e as { name?: string })?.name));
+    const rawEntities = account.raw_analysis?.entitiesExhaustive;
+    const fromRaw = Array.isArray(rawEntities)
+      ? rawEntities.map((e: unknown) => safeString((e as { name?: string })?.name)).filter(Boolean)
+      : [];
     if (fromRaw.length > 0) return [...new Set(fromRaw)];
-    const fromSubs = account.subsidiaries || [];
-    const fromContacts = contacts.map((c) => c.entity).filter(Boolean) as string[];
+    const fromSubs = Array.isArray(account.subsidiaries) ? account.subsidiaries : [];
+    const fromContacts = safeContacts.map((c) => c.entity).filter(Boolean) as string[];
     return [...new Set(["Groupe", ...fromSubs, ...fromContacts])];
-  }, [account.raw_analysis?.entitiesExhaustive, account.subsidiaries, contacts]);
+  }, [account.raw_analysis?.entitiesExhaustive, account.subsidiaries, safeContacts]);
 
   const contactsByEntity = useMemo(() => {
     const map: Record<string, Contact[]> = {};
     for (const e of entities) map[e] = [];
-    for (const c of contacts) {
+    for (const c of safeContacts) {
       const key = (c.entity || "Groupe").trim() || "Groupe";
       if (!map[key]) map[key] = [];
       map[key].push(c);
     }
     return map;
-  }, [entities, contacts]);
+  }, [entities, safeContacts]);
 
   const roleLabel: Record<string, string> = {
     sponsor: "Décideur",
@@ -514,7 +522,7 @@ function TabOrganigramme({ account, contacts }: { account: AccountAnalysis; cont
 
   return (
     <div className="space-y-6">
-      {organigrammeLogic && (organigrammeLogic.hierarchy || organigrammeLogic.siblingEntities || organigrammeLogic.entryPoints) && (
+      {hasOrganigrammeLogic && (
         <Card className="border-border card-neutral rounded-xl">
           <CardContent className="p-6 space-y-3">
             <h3 className="font-display text-sm font-semibold text-foreground">Logique commerciale</h3>
@@ -602,7 +610,7 @@ function TabOrganigramme({ account, contacts }: { account: AccountAnalysis; cont
                     {(["sponsor", "champion", "operational", "purchasing", "influencer"] as const).map((r) => {
                       const n = byRole[r] || 0;
                       if (!n) return null;
-                      const st = roleStyle[r];
+                      const st = roleStyle[r] || roleStyle.unknown;
                       return (
                         <span key={r} className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium", st.badge)}>
                           {roleLabel[r]} · {n}
@@ -661,44 +669,6 @@ function TabOrganigramme({ account, contacts }: { account: AccountAnalysis; cont
           );
         })}
       </div>
-    </div>
-  );
-}
-
-function TabOuvrirCompte({ raw }: { raw: unknown }) {
-  const data = raw && typeof raw === "object" && "commentOuvrirCompte" in raw ? (raw as { commentOuvrirCompte?: unknown }).commentOuvrirCompte : null;
-  const d = data && typeof data === "object" ? data as { strategy?: unknown; entryPoints?: unknown[] } : null;
-  if (!d) return (
-    <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-center">
-      <p className="text-sm text-muted-foreground">Aucune donnée disponible pour cet onglet.</p>
-      <p className="text-xs text-muted-foreground mt-1">Relancez une analyse pour générer la stratégie d&apos;entrée et les portes d&apos;entrée.</p>
-      <Button variant="outline" size="sm" className="mt-4" onClick={() => window.location.href = "/search"}>Nouvelle recherche</Button>
-    </div>
-  );
-  const entryPoints = Array.isArray(d.entryPoints) ? d.entryPoints : [];
-  return (
-    <div className="space-y-6">
-      <Card className="border-border card-neutral rounded-xl">
-        <CardContent className="p-6 space-y-3">
-          <h3 className="font-display text-sm font-semibold">Stratégie d&apos;entrée</h3>
-          <p className="text-sm text-foreground/90 whitespace-pre-line">{safeString(d.strategy)}</p>
-        </CardContent>
-      </Card>
-      {entryPoints.length > 0 && (
-        <Card className="border-border card-neutral rounded-xl">
-          <CardContent className="p-6 space-y-3">
-            <h3 className="font-display text-sm font-semibold">Portes d&apos;entrée recommandées</h3>
-            <ul className="space-y-2">
-              {entryPoints.map((ep: unknown, i: number) => (
-                <li key={i} className="flex flex-col gap-1 text-sm">
-                  <span className="font-medium">{safeString((ep as { label?: unknown })?.label)}</span>
-                  {(ep as { justification?: unknown })?.justification != null && <span className="text-muted-foreground text-xs">{safeString((ep as { justification?: unknown }).justification)}</span>}
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }
@@ -803,13 +773,13 @@ function TabEvaluation({ raw, account, onboardingData }: { raw: unknown; account
   const rawPriorityJustification = raw && typeof raw === "object" && "priorityJustification" in raw
     ? (raw as { priorityJustification?: any }).priorityJustification
     : null;
-  const factors = rawPriorityJustification && typeof rawPriorityJustification === "object"
+  const factors = rawPriorityJustification && typeof rawPriorityJustification === "object" && !Array.isArray(rawPriorityJustification)
     ? ([
-        { key: "urgency", label: "Urgence", hint: "Signaux et timing", icon: "⚡" },
-        { key: "accessibility", label: "Accessibilité", hint: "Portes d’entrée", icon: "🚪" },
-        { key: "competition", label: "Concurrence", hint: "Référencement / ESN en place", icon: "🏁" },
-        { key: "alignment", label: "Fit ESN", hint: "Adéquation offres/personas", icon: "🎯" },
-        { key: "potential", label: "Potentiel", hint: "Valeur & périmètre", icon: "💎" },
+        { key: "urgency", label: "Urgence", hint: "Signaux et timing", Icon: Zap },
+        { key: "accessibility", label: "Accessibilité", hint: "Portes d’entrée", Icon: DoorOpen },
+        { key: "competition", label: "Concurrence", hint: "Référencement / ESN en place", Icon: Flag },
+        { key: "alignment", label: "Fit ESN", hint: "Adéquation offres/personas", Icon: Target },
+        { key: "potential", label: "Potentiel", hint: "Valeur & périmètre", Icon: Gem },
       ] as const).map((f) => {
         const obj = (rawPriorityJustification as any)[f.key];
         const scoreF = obj?.score != null ? Number(obj.score) : null;
@@ -817,6 +787,10 @@ function TabEvaluation({ raw, account, onboardingData }: { raw: unknown; account
         return { ...f, score: scoreF, justification: justifF };
       })
     : [];
+
+  const ouvrirData = raw && typeof raw === "object" && "commentOuvrirCompte" in raw ? (raw as { commentOuvrirCompte?: unknown }).commentOuvrirCompte : null;
+  const ouvrir = ouvrirData && typeof ouvrirData === "object" ? ouvrirData as { strategy?: unknown; entryPoints?: unknown[] } : null;
+  const entryPoints = Array.isArray(ouvrir?.entryPoints) ? ouvrir.entryPoints : [];
 
   const summaryBullets: string[] = [];
   if (size && size !== "—") summaryBullets.push(`Taille ESN : ${size} → approche recommandée alignée sur vos contraintes.`)
@@ -835,16 +809,32 @@ function TabEvaluation({ raw, account, onboardingData }: { raw: unknown; account
 
   return (
     <div className="space-y-6">
+      {/* Intro Scoring business */}
+      <Card className="border-border card-neutral rounded-xl bg-muted/20">
+        <CardContent className="p-6 space-y-2">
+          <div className="flex items-center gap-2">
+            <BarChart2 className="h-5 w-5 text-primary" />
+            <h2 className="font-display text-base font-semibold">Scoring business & décision</h2>
+          </div>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            Cette vue consolide le score du compte, les facteurs de décision, la recommandation GO/NO-GO et la stratégie pour ouvrir le compte. Utilisez-la pour prioriser vos actions et choisir les bonnes portes d&apos;entrée.
+          </p>
+        </CardContent>
+      </Card>
+
       {/* KPI header */}
       <div className="grid gap-4 md:grid-cols-3">
-        <Card className={`border-2 rounded-xl ${isGo ? "border-bellum-success/40 bg-bellum-success/5" : "border-destructive/25 bg-destructive/5"}`}>
+        <Card className={cn("border-2 rounded-xl", isGo ? "border-bellum-success/40 bg-bellum-success/5" : "border-destructive/25 bg-destructive/5")}>
           <CardContent className="p-6">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Recommandation</p>
-            <div className="flex items-center gap-2 mt-2">
-              <Badge variant="secondary" className={cn("text-xs", isGo ? "bg-bellum-success/10 text-bellum-success border-bellum-success/20" : "bg-destructive/10 text-destructive border-destructive/20")}>
+            <div className="flex items-center gap-2">
+              <FileCheck className="h-4 w-4 text-muted-foreground" />
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Recommandation</p>
+            </div>
+            <div className="flex items-center gap-2 mt-3">
+              <Badge variant="secondary" className={cn("text-sm px-2.5 py-0.5", isGo ? "bg-bellum-success/10 text-bellum-success border-bellum-success/20" : "bg-destructive/10 text-destructive border-destructive/20")}>
                 {isGo ? "GO" : "NO-GO"}
               </Badge>
-              <span className="text-xs text-muted-foreground">— décision rapide</span>
+              <span className="text-xs text-muted-foreground">Décision rapide</span>
             </div>
             {mismatch && (
               <p className="text-[10px] text-muted-foreground mt-3">
@@ -856,23 +846,30 @@ function TabEvaluation({ raw, account, onboardingData }: { raw: unknown; account
 
         <Card className="border-border card-neutral rounded-xl">
           <CardContent className="p-6">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Score global</p>
-            <div className="flex items-end gap-3 mt-2">
+            <div className="flex items-center gap-2">
+              <Gauge className="h-4 w-4 text-muted-foreground" />
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Score global</p>
+            </div>
+            <div className="flex items-end gap-3 mt-3">
               <p className="text-3xl font-bold">{score || "—"}</p>
               <p className="text-sm text-muted-foreground mb-1">/10</p>
             </div>
-            <p className="text-xs text-muted-foreground mt-2">Cohérent avec le score du bandeau en haut.</p>
+            <Progress value={typeof score === "number" ? score * 10 : 0} className="h-2 mt-2" />
+            <p className="text-xs text-muted-foreground mt-2">Aligné sur le score du bandeau en haut de page.</p>
           </CardContent>
         </Card>
 
         <Card className="border-border card-neutral rounded-xl">
           <CardContent className="p-6">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Lecture pour votre ESN</p>
+            <div className="flex items-center gap-2">
+              <Shield className="h-4 w-4 text-muted-foreground" />
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Lecture pour votre ESN</p>
+            </div>
             {summaryBullets.length > 0 ? (
               <ul className="mt-3 space-y-2 text-sm">
                 {summaryBullets.slice(0, 3).map((b, i) => (
                   <li key={i} className="flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 text-muted-foreground mt-0.5" />
+                    <CheckCircle className="h-4 w-4 text-bellum-success mt-0.5 shrink-0" />
                     <span className="text-foreground/90">{b}</span>
                   </li>
                 ))}
@@ -888,9 +885,12 @@ function TabEvaluation({ raw, account, onboardingData }: { raw: unknown; account
       {factors.length > 0 && (
         <Card className="border-border card-neutral rounded-xl">
           <CardContent className="p-6 space-y-4">
-            <div>
-              <h3 className="font-display text-sm font-semibold">Facteurs du score</h3>
-              <p className="text-xs text-muted-foreground mt-1">Décomposition : ce qui tire le score vers le haut (ou vers le bas) et pourquoi.</p>
+            <div className="flex items-start gap-2">
+              <BarChart2 className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+              <div>
+                <h3 className="font-display text-sm font-semibold">Facteurs du score</h3>
+                <p className="text-xs text-muted-foreground mt-1">Décomposition : ce qui tire le score vers le haut (ou vers le bas) et pourquoi. Utilisez ces critères pour affiner votre décision.</p>
+              </div>
             </div>
 
             <div className="table-premium-wrapper">
@@ -907,7 +907,7 @@ function TabEvaluation({ raw, account, onboardingData }: { raw: unknown; account
                     <TableRow key={f.key} className="table-row-hover">
                       <TableCell className="align-top">
                         <div className="flex items-start gap-2">
-                          <span className="text-sm">{f.icon}</span>
+                          {f.Icon && <f.Icon className="h-4 w-4 text-muted-foreground shrink-0" />}
                           <div>
                             <div className="text-sm font-medium">{f.label}</div>
                             <div className="text-xs text-muted-foreground">{f.hint}</div>
@@ -934,10 +934,74 @@ function TabEvaluation({ raw, account, onboardingData }: { raw: unknown; account
         </Card>
       )}
 
+      {/* Comment ouvrir ce compte — intégré dans Scoring business */}
+      {(ouvrir?.strategy || entryPoints.length > 0) && (
+        <Card className="border-border card-neutral rounded-xl border-primary/20">
+          <CardContent className="p-6 space-y-5">
+            <div className="flex items-center gap-2">
+              <DoorOpen className="h-5 w-5 text-primary" />
+              <h3 className="font-display text-base font-semibold">Comment ouvrir ce compte</h3>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Stratégie d&apos;entrée et portes d&apos;entrée recommandées pour ce compte, en cohérence avec le score et votre profil ESN.
+            </p>
+            {ouvrir?.strategy != null && safeString(ouvrir.strategy) !== "—" && (
+              <div className="rounded-lg bg-muted/30 p-4 space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <Lightbulb className="h-3.5 w-3.5" /> Stratégie d&apos;entrée
+                </p>
+                <p className="text-sm text-foreground/90 whitespace-pre-line leading-relaxed">
+                  {safeString(ouvrir.strategy)}
+                </p>
+              </div>
+            )}
+            {entryPoints.length > 0 && (
+              <div className="space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <Target className="h-3.5 w-3.5" /> Portes d&apos;entrée recommandées
+                </p>
+                <ul className="space-y-3">
+                  {entryPoints.map((ep: unknown, i: number) => {
+                    const e = ep && typeof ep === "object" ? ep as { label?: unknown; targetProfile?: unknown; justification?: unknown; angle?: unknown; risks?: unknown; planB?: unknown } : {};
+                    return (
+                      <li key={i} className="flex gap-3 rounded-lg border border-border bg-card p-4">
+                        <ChevronRight className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                        <div className="space-y-1.5 min-w-0">
+                          <p className="text-sm font-medium">{safeString(e.label)}</p>
+                          {e.targetProfile != null && (
+                            <p className="text-xs text-muted-foreground"><span className="font-medium">Profil cible :</span> {safeString(e.targetProfile)}</p>
+                          )}
+                          {e.justification != null && (
+                            <p className="text-sm text-foreground/85 whitespace-pre-line">{safeString(e.justification)}</p>
+                          )}
+                          {e.angle != null && (
+                            <p className="text-xs text-muted-foreground"><span className="font-medium">Angle :</span> {safeString(e.angle)}</p>
+                          )}
+                          {(e.risks != null || e.planB != null) && (
+                            <div className="flex flex-wrap gap-3 pt-1 text-xs text-muted-foreground">
+                              {e.risks != null && <span><span className="font-medium">Risques :</span> {safeString(e.risks)}</span>}
+                              {e.planB != null && <span><span className="font-medium">Plan B :</span> {safeString(e.planB)}</span>}
+                            </div>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Main justification */}
       <Card className="border-border card-neutral rounded-xl">
         <CardContent className="p-6 space-y-3">
-          <h3 className="font-display text-sm font-semibold">Justification (aérée)</h3>
+          <div className="flex items-center gap-2">
+            <FileCheck className="h-4 w-4 text-muted-foreground" />
+            <h3 className="font-display text-sm font-semibold">Justification détaillée</h3>
+          </div>
+          <p className="text-xs text-muted-foreground">Synthèse des éléments qui fondent le score et la recommandation.</p>
           <div className="prose prose-sm dark:prose-invert max-w-none">
             <p className="text-sm text-foreground/90 whitespace-pre-line leading-relaxed">
               {finalJustification}
@@ -948,21 +1012,27 @@ function TabEvaluation({ raw, account, onboardingData }: { raw: unknown; account
 
       {/* Recommendation */}
       {finalRecommendation && finalRecommendation !== "—" && (
-        <Card className="border-border card-neutral rounded-xl">
-          <CardContent className="p-6 space-y-2">
-            <h3 className="font-display text-sm font-semibold">Recommandation (action)</h3>
+        <Card className="border-border card-neutral rounded-xl border-primary/10">
+          <CardContent className="p-6 space-y-3">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-primary" />
+              <h3 className="font-display text-sm font-semibold">Recommandation d&apos;action</h3>
+            </div>
             <p className="text-sm text-foreground/90 whitespace-pre-line leading-relaxed">{finalRecommendation}</p>
           </CardContent>
         </Card>
       )}
 
-      {esnSynergies.length > 0 && (
-        <Card className="border-border card-neutral rounded-xl">
-          <CardContent className="p-6 space-y-3">
+      <Card className="border-border card-neutral rounded-xl">
+        <CardContent className="p-6 space-y-3">
+          <div className="flex items-center gap-2">
+            <Users className="h-4 w-4 text-muted-foreground" />
             <h3 className="font-display text-sm font-semibold">ESN déjà (probablement) en place</h3>
-            <p className="text-xs text-muted-foreground">
-              Liste d&apos;ESN qui semblent déjà intervenir sur ce compte (ou l&apos;avoir fait). Objectif : créer des synergies au lieu d&apos;arriver totalement en frontal.
-            </p>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Liste d&apos;ESN qui semblent déjà intervenir sur ce compte (ou l&apos;avoir fait). Objectif : créer des synergies, sous-traitance ou co-traitance au lieu d&apos;arriver en frontal. Les prochaines analyses enrichiront cette section.
+          </p>
+          {esnSynergies.length > 0 ? (
             <div className="table-premium-wrapper">
               <Table>
                 <TableHeader>
@@ -996,9 +1066,14 @@ function TabEvaluation({ raw, account, onboardingData }: { raw: unknown; account
                 </TableBody>
               </Table>
             </div>
-          </CardContent>
-        </Card>
-      )}
+          ) : (
+            <div className="rounded-lg border border-dashed border-border bg-muted/20 p-6 text-center">
+              <p className="text-sm text-muted-foreground">Aucune ESN partenaire identifiée pour ce compte.</p>
+              <p className="text-xs text-muted-foreground mt-1">Relancez une analyse pour que l&apos;IA recherche des ESN déjà en place (référencement, partenariats, annonces).</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -1367,10 +1442,9 @@ export default function AccountDetail() {
           <TabsTrigger value="contacts" className="rounded-lg px-4 py-2">Contacts ({contactCount})</TabsTrigger>
           <TabsTrigger value="organigramme" className="rounded-lg px-4 py-2">Organigramme</TabsTrigger>
           <TabsTrigger value="plan" className="rounded-lg px-4 py-2">Plan d&apos;action</TabsTrigger>
-          <TabsTrigger value="ouvrir" className="rounded-lg px-4 py-2">Ouvrir ce compte</TabsTrigger>
           <TabsTrigger value="offres" className="rounded-lg px-4 py-2">Offres à construire</TabsTrigger>
           <TabsTrigger value="plan-hebdo" className="rounded-lg px-4 py-2">Plan hebdo</TabsTrigger>
-          <TabsTrigger value="evaluation" className="rounded-lg px-4 py-2">Évaluation</TabsTrigger>
+          <TabsTrigger value="evaluation" className="rounded-lg px-4 py-2">Scoring business</TabsTrigger>
           <TabsTrigger value="messages" className="rounded-lg px-4 py-2">Messages</TabsTrigger>
         </TabsList>
 
@@ -1378,7 +1452,6 @@ export default function AccountDetail() {
         <TabsContent value="contacts" className="mt-6"><TabContacts contacts={contacts as Contact[]} companyName={account.company_name} /></TabsContent>
         <TabsContent value="organigramme" className="mt-6"><TabOrganigramme account={account} contacts={contacts as Contact[]} /></TabsContent>
         <TabsContent value="plan" className="mt-6"><TabPlan angles={angles as AttackAngle[]} actionPlan={actionPlan as ActionPlan | null} /></TabsContent>
-        <TabsContent value="ouvrir" className="mt-6"><TabOuvrirCompte raw={account.raw_analysis} /></TabsContent>
         <TabsContent value="offres" className="mt-6"><TabOffresConstruire raw={account.raw_analysis} /></TabsContent>
         <TabsContent value="plan-hebdo" className="mt-6"><TabPlanHebdo raw={account.raw_analysis} /></TabsContent>
         <TabsContent value="evaluation" className="mt-6"><TabEvaluation raw={account.raw_analysis} account={account} onboardingData={profile?.onboarding_data} /></TabsContent>

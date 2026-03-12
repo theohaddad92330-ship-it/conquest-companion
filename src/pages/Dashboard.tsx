@@ -40,7 +40,7 @@ import { useCredits } from "@/hooks/useCredits";
 import { EmptyState } from "@/components/EmptyState";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
-import { safeString } from "@/lib/utils";
+import { safeString, cn } from "@/lib/utils";
 
 const fadeUp = { hidden: { opacity: 0, y: 15 }, visible: { opacity: 1, y: 0 } };
 const stagger = { visible: { transition: { staggerChildren: 0.08 } } };
@@ -50,15 +50,16 @@ export default function Dashboard() {
   const [query, setQuery] = useState("");
   const { user } = useAuth();
   const { profile } = useProfile();
-  const { accounts, isLoading: accountsLoading, error: accountsError } = useAccounts();
+  const { accounts, isLoading: accountsLoading, error: accountsError, refetch: refetchAccounts } = useAccounts();
   const { credits: userCredits, usagePercent, remaining, isLoading: creditsLoading } = useCredits();
+  const safeAccounts = accountsError ? [] : (Array.isArray(accounts) ? accounts : []);
   const firstName = profile?.full_name?.split(" ")[0] || user?.user_metadata?.full_name?.split(" ")[0] || user?.user_metadata?.name?.split(" ")[0] || "";
 
   const sortedAccounts = useMemo(() => {
-    return [...accounts].sort(
+    return [...safeAccounts].sort(
       (a: any, b: any) => new Date(b.created_at ?? b.createdAt).getTime() - new Date(a.created_at ?? a.createdAt).getTime()
     );
-  }, [accounts]);
+  }, [safeAccounts]);
 
   const onboarding = (profile?.onboarding_data ?? {}) as any;
   const userOffers = Array.isArray(onboarding.offers) ? onboarding.offers.slice(0, 6) : [];
@@ -98,13 +99,13 @@ export default function Dashboard() {
   }
 
   const statusStats = useMemo(() => {
-    const total = accounts.length || 1;
-    const completed = accounts.filter((a: any) => a.status === "completed").length;
-    const analyzing = accounts.filter((a: any) => a.status === "analyzing").length;
-    const errored = accounts.filter((a: any) => a.status === "error").length;
-    const high = accounts.filter((a: any) => (a.priority_score ?? 0) >= 8).length;
-    const medium = accounts.filter((a: any) => (a.priority_score ?? 0) >= 5 && (a.priority_score ?? 0) <= 7).length;
-    const low = Math.max(0, accounts.length - high - medium);
+    const total = safeAccounts.length || 1;
+    const completed = safeAccounts.filter((a: any) => a.status === "completed").length;
+    const analyzing = safeAccounts.filter((a: any) => a.status === "analyzing").length;
+    const errored = safeAccounts.filter((a: any) => a.status === "error").length;
+    const high = safeAccounts.filter((a: any) => (a.priority_score ?? 0) >= 8).length;
+    const medium = safeAccounts.filter((a: any) => (a.priority_score ?? 0) >= 5 && (a.priority_score ?? 0) <= 7).length;
+    const low = Math.max(0, safeAccounts.length - high - medium);
     return {
       total,
       completed,
@@ -115,7 +116,7 @@ export default function Dashboard() {
       low,
       completedPct: Math.round((completed / total) * 100),
     };
-  }, [accounts]);
+  }, [safeAccounts]);
 
   const decisionInbox = useMemo(() => {
     // "Actualités" = signaux déjà stockés en DB (recent_signals)
@@ -213,7 +214,7 @@ export default function Dashboard() {
     if (query.trim()) navigate(`/search?q=${encodeURIComponent(query.trim())}`);
   };
 
-  const hasAccounts = accounts.length > 0;
+  const hasAccounts = safeAccounts.length > 0;
   const creditUsed = userCredits?.accounts_used ?? 0;
   const creditTotal = userCredits?.accounts_limit ?? 3;
 
@@ -232,22 +233,19 @@ export default function Dashboard() {
     );
   }
 
-  if (accountsError) {
-    return (
-      <div className="p-6 max-w-6xl mx-auto">
-        <Card className="border-destructive/50">
-          <CardContent className="p-6 text-center space-y-3">
-            <AlertTriangle className="h-8 w-8 text-destructive mx-auto" />
-            <p className="text-sm text-destructive">Impossible de charger vos données.</p>
-            <Button variant="outline" size="sm" onClick={() => window.location.reload()}>Réessayer</Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
+      {accountsError && (
+        <Card className="border-destructive/30 bg-destructive/5">
+          <CardContent className="p-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive shrink-0" />
+              <p className="text-sm text-destructive">Impossible de charger la liste des comptes.</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => typeof refetchAccounts === "function" && refetchAccounts()}>Réessayer</Button>
+          </CardContent>
+        </Card>
+      )}
       <motion.div initial="hidden" animate="visible" variants={stagger}>
         {/* Header */}
         <motion.div variants={fadeUp} className="header-premium mb-4 flex items-start justify-between rounded-xl px-5 py-4 gap-4 flex-wrap">
@@ -263,7 +261,7 @@ export default function Dashboard() {
           <div className="flex items-center gap-2 flex-wrap">
             <Badge variant="secondary" className="gap-1.5 px-3 py-1.5 border border-border bg-muted text-muted-foreground text-xs font-medium">
               <Sparkles className="h-3 w-3" />
-              Plan {(userCredits?.plan ?? "starter").toLowerCase()}
+              Plan {String(userCredits?.plan ?? "starter").toLowerCase()}
             </Badge>
             <Button variant="outline" size="sm" onClick={() => navigate("/billing")} className="gap-2">
               <Coins className="h-4 w-4 text-muted-foreground" />

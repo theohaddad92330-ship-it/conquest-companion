@@ -55,11 +55,14 @@ const CITY_COORDS: Record<string, { x: number; y: number }> = {
   perpignan: { x: 152, y: 285 },
   pau: { x: 82, y: 268 },
   bayonne: { x: 62, y: 278 },
-  la rochelle: { x: 72, y: 218 },
-  saint-etienne: { x: 172, y: 202 },
+  "la rochelle": { x: 72, y: 218 },
+  "saint-etienne": { x: 172, y: 202 },
   troyes: { x: 168, y: 108 },
   amiens: { x: 125, y: 45 },
-  le mans: { x: 88, y: 125 },
+  "le mans": { x: 88, y: 125 },
+  montrouge: { x: 138, y: 92 },
+  guyancourt: { x: 128, y: 90 },
+  annecy: { x: 198, y: 172 },
 };
 
 function normalizeCity(name: string | undefined): string {
@@ -83,10 +86,12 @@ function getCoord(city: string | undefined): { x: number; y: number } | null {
   return partial ? CITY_COORDS[partial] : null;
 }
 
-// Contour simplifié France métropolitaine (path SVG)
-const FRANCE_PATH =
-  "M 48,98 L 52,158 L 58,232 L 72,268 L 105,298 L 185,295 L 222,282 L 252,248 L 258,185 L 248,105 L 255,28 L 165,12 L 128,22 L 95,55 L 52,75 L 48,98 Z";
-
+// Contour France : hexagone (référence) — N, NE, E, SE, S, SO, O, Bretagne, N
+const FRANCE_MAINLAND =
+  "M 102,18 L 238,26 L 256,102 L 252,228 L 195,282 L 88,288 L 38,248 L 25,118 L 28,82 L 52,72 L 102,18 Z";
+// Corse (île au sud-est)
+const FRANCE_CORSICA =
+  "M 212,252 L 232,248 L 248,258 L 252,278 L 242,294 L 218,296 L 205,278 L 208,258 L 212,252 Z";
 const VIEWBOX = "0 0 260 300";
 
 export function FranceSitesMap({
@@ -98,7 +103,7 @@ export function FranceSitesMap({
 }) {
   const points = useMemo(() => {
     const seen = new Set<string>();
-    return sites
+    return (sites || [])
       .filter((s) => {
         const c = normalizeCity(s.city);
         if (!c || seen.has(c)) return false;
@@ -111,33 +116,43 @@ export function FranceSitesMap({
       }));
   }, [sites]);
 
-  if (sites.length === 0) return null;
+  const hasSites = Array.isArray(sites) && sites.length > 0;
 
   return (
     <div className={cn("space-y-4", className)}>
-      <div className="rounded-xl border border-border bg-muted/30 overflow-hidden">
+      {/* Fond sombre + contour clair comme référence, points bien visibles */}
+      <div className="rounded-xl border border-border overflow-hidden bg-slate-900 min-h-[220px] flex items-center justify-center">
         <svg
           viewBox={VIEWBOX}
-          className="w-full h-auto max-h-[280px] block"
+          className="w-full max-w-md mx-auto h-auto min-h-[200px] max-h-[280px] block"
           preserveAspectRatio="xMidYMid meet"
           aria-hidden
         >
+          {/* France métropolitaine : contour net type référence (blanc / clair sur fond sombre) */}
           <path
-            d={FRANCE_PATH}
-            fill="hsl(var(--muted))"
-            stroke="hsl(var(--border))"
-            strokeWidth="1.5"
+            d={FRANCE_MAINLAND}
+            fill="none"
+            strokeWidth="2"
+            className="stroke-white/90"
+          />
+          {/* Corse */}
+          <path
+            d={FRANCE_CORSICA}
+            fill="none"
+            strokeWidth="2"
+            className="stroke-white/90"
           />
           {points.map((p, i) => (
             <g key={i}>
               <circle
                 cx={p.coord.x}
                 cy={p.coord.y}
-                r={p.importance === "haute" ? 8 : 6}
+                r={p.importance === "haute" ? 6 : 5}
                 fill="hsl(var(--primary))"
                 stroke="hsl(var(--background))"
                 strokeWidth="1.5"
-                opacity={p.importance === "haute" ? 1 : 0.85}
+                opacity={p.importance === "haute" ? 1 : 0.95}
+                className="drop-shadow-md"
               />
               <title>
                 {[p.label || p.city, p.region, p.type].filter(Boolean).join(" · ")}
@@ -149,8 +164,9 @@ export function FranceSitesMap({
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <MapPin className="h-3.5 w-3.5 shrink-0" />
         <span>
-          {points.length} site{points.length > 1 ? "s" : ""} en France
-          {points.length < sites.length && ` (${sites.length - points.length} non positionnés sur la carte)`}
+          {hasSites
+            ? `${points.length} site${points.length > 1 ? "s" : ""} en France${points.length < (sites?.length ?? 0) ? ` (${(sites?.length ?? 0) - points.length} non positionnés sur la carte)` : ""}`
+            : "Aucun site France identifié pour ce compte."}
         </span>
       </div>
     </div>

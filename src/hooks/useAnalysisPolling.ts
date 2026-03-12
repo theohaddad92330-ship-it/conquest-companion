@@ -251,8 +251,8 @@ export function useAnalysisPolling() {
         }
       }, 2000);
 
-      // Timeout après 5 minutes
-      setTimeout(() => stopPolling(), 300000);
+      // Arrêt du polling après 10 min (le backend coupe à 8 min et met status error — on laisse le temps de le récupérer)
+      setTimeout(() => stopPolling(), 600000);
 
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erreur lors du lancement';
