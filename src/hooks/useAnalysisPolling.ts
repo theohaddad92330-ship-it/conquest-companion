@@ -195,21 +195,21 @@ export function useAnalysisPolling() {
             .select('*')
             .eq('account_id', accountId);
 
-          // Calculer la progression
+          // Calculer la progression (libellés centrés agent — pas de mention d'outils)
           let progress = 15;
-          let currentStep = 'Recherche web en cours...';
+          let currentStep = 'Bellum analyse le périmètre et les signaux...';
 
           if (account.sector) {
             progress = 30;
-            currentStep = 'Fiche compte prête — Scraping LinkedIn en cours...';
+            currentStep = 'Fiche compte prête — identification des décideurs et portes d\'entrée...';
           }
           if (contacts && contacts.length > 0) {
             progress = 60;
-            currentStep = 'Contacts identifiés — Enrichissement en cours...';
+            currentStep = 'Contacts identifiés — enrichissement des profils et préparation des messages...';
           }
           if (angles && angles.length > 0) {
             progress = 80;
-            currentStep = 'Plan d\'attaque prêt — Génération des messages...';
+            currentStep = 'Plan d\'attaque prêt — finalisation des messages personnalisés...';
           }
           let correctedName: string | null = null;
           let notFound = false;

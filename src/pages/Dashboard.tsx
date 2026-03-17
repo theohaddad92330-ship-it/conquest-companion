@@ -5,13 +5,9 @@ import {
   Search,
   LayoutDashboard,
   Bell,
-  ListChecks,
   Timer,
-  Flame,
   RefreshCw,
   ArrowUpRight,
-  Compass,
-  Layers,
   MessageSquareText,
   Users,
   Target,
@@ -41,6 +37,13 @@ import { EmptyState } from "@/components/EmptyState";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
 import { safeString, cn } from "@/lib/utils";
+import {
+  getDashboardIntro,
+  getSearchTip,
+  getNextActionSectionTip,
+  getQueueEmptyTip,
+  getJarvisBonusTip,
+} from "@/lib/personalized-copy";
 
 const fadeUp = { hidden: { opacity: 0, y: 15 }, visible: { opacity: 1, y: 0 } };
 const stagger = { visible: { transition: { staggerChildren: 0.08 } } };
@@ -69,6 +72,7 @@ export default function Dashboard() {
   const userSize = safeString(onboarding.size);
 
   function accountContactsCount(a: any) {
+    if (typeof (a as any).contact_count === "number") return (a as any).contact_count;
     const rawContacts = a?.raw_analysis?.contacts;
     if (Array.isArray(rawContacts)) return rawContacts.length;
     return 0;
@@ -255,7 +259,7 @@ export default function Dashboard() {
               <h1 className="font-display text-2xl font-bold">Tableau de bord{firstName ? ` — ${firstName}` : ""}</h1>
             </div>
             <p className="text-sm text-muted-foreground mt-1">
-              Décidez quoi faire maintenant : qui relancer, où entrer, et quoi envoyer.
+              {getDashboardIntro(firstName, onboarding)}
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -291,7 +295,7 @@ export default function Dashboard() {
               </div>
               <div className="mt-3 flex items-center justify-between flex-wrap gap-2">
                 <p className="text-xs text-muted-foreground">
-                  Astuce : démarrez par les comptes <strong>8–10</strong> ou par ceux qui ont des <strong>signaux</strong> utiles à citer.
+                  {getSearchTip(onboarding)}
                 </p>
                 <Button variant="ghost" size="sm" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => navigate("/accounts")}>
                   Voir mon portefeuille <ArrowUpRight className="h-3.5 w-3.5 ml-1" />
@@ -301,117 +305,63 @@ export default function Dashboard() {
           </Card>
         </motion.div>
 
-        {/* Decision KPIs */}
+        {/* Pilotage : 3 KPIs uniquement — pas de copier-coller des autres pages */}
         <motion.div variants={fadeUp} className="grid gap-4 md:grid-cols-3 mb-6">
           <Card className="border-border card-neutral rounded-xl">
-            <CardContent className="p-6">
-              <div className="flex items-start justify-between gap-3">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Avancement portefeuille</p>
-                  <div className="flex items-end gap-3 mt-2">
-                    <p className="text-3xl font-bold">{statusStats.completed}</p>
-                    <p className="text-sm text-muted-foreground mb-1">/{statusStats.total} prêts</p>
-                  </div>
-                </div>
-                <div className="h-10 w-10 rounded-xl bg-muted flex items-center justify-center">
-                  <ListChecks className="h-5 w-5 text-muted-foreground" />
-                </div>
-              </div>
-              <div className="mt-4">
-                <Progress value={statusStats.completedPct} className="h-2" />
-                <div className="flex justify-between text-xs text-muted-foreground mt-2">
-                  <span>{statusStats.analyzing} en cours</span>
-                  <span>{statusStats.errored} en erreur</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border card-neutral rounded-xl">
-            <CardContent className="p-6">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Votre périmètre</p>
-                  <p className="text-sm text-foreground/90 mt-2">
-                    {userSize !== "—" ? <>ESN <strong>{userSize}</strong> · </> : null}
-                    {userGeo.length > 0 ? <><strong>{userGeo.slice(0, 2).map((g: any) => safeString(g)).join(", ")}</strong> · </> : null}
-                    {userSectors.length > 0 ? <><strong>{userSectors.slice(0, 2).map((s: any) => safeString(s)).join(", ")}</strong></> : <>Secteurs non renseignés</>}
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Prêts à lancer</p>
+                  <p className="text-2xl font-bold mt-1">{cockpit.readyToday.length > 0 ? cockpit.readyToday.length : statusStats.high}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {cockpit.readyToday.length > 0 ? "comptes score 8+ avec contacts" : "comptes priorité haute (8–10)"}
                   </p>
                 </div>
-                <div className="h-10 w-10 rounded-xl bg-muted flex items-center justify-center">
-                  <Compass className="h-5 w-5 text-muted-foreground" />
+                <div className="h-12 w-12 rounded-xl bg-bellum-success/10 flex items-center justify-center">
+                  <Target className="h-6 w-6 text-bellum-success" />
                 </div>
               </div>
-              <div className="mt-4 flex flex-wrap gap-1.5">
-                {userOffers.slice(0, 3).map((o: any, i: number) => (
-                  <Badge key={i} variant="secondary" className="text-[10px] bg-muted text-muted-foreground border-border">{safeString(o)}</Badge>
-                ))}
-                {userPersonas.slice(0, 3).map((p: any, i: number) => (
-                  <Badge key={`p-${i}`} variant="secondary" className="text-[10px] bg-card text-muted-foreground border-border">{safeString(p)}</Badge>
-                ))}
-                {(userOffers.length + userPersonas.length) === 0 && (
-                  <span className="text-xs text-muted-foreground">Complétez le profil pour des recommandations ultra ciblées.</span>
-                )}
+              {statusStats.completed > 0 && (
+                <p className="text-xs text-muted-foreground mt-3">
+                  {statusStats.completed} analysés · {statusStats.analyzing} en cours
+                </p>
+              )}
+            </CardContent>
+          </Card>
+          <Card className="border-border card-neutral rounded-xl">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">À traiter</p>
+                  <p className="text-2xl font-bold mt-1">{statusStats.analyzing + statusStats.errored}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {statusStats.analyzing} en cours · {statusStats.errored} en erreur
+                  </p>
+                </div>
+                <div className="h-12 w-12 rounded-xl bg-muted flex items-center justify-center">
+                  <Timer className="h-6 w-6 text-muted-foreground" />
+                </div>
               </div>
-              <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
-                <span>Couverture périmètre</span>
-                <span className="font-mono">{cockpit.inScopeTotal}/{statusStats.total}</span>
-              </div>
-              <div className="mt-2 h-2 rounded-full bg-secondary overflow-hidden">
-                <div className="h-full bg-foreground/70" style={{ width: `${Math.round((cockpit.inScopeTotal / (statusStats.total || 1)) * 100)}%` }} />
-              </div>
-              <div className="mt-3">
-                <Button variant="outline" size="sm" className="text-xs" onClick={() => navigate("/profile")}>
-                  Affiner mon périmètre <ArrowUpRight className="h-3.5 w-3.5 ml-1" />
+              {statusStats.errored > 0 && (
+                <Button variant="outline" size="sm" className="mt-3 text-xs" onClick={() => navigate("/accounts")}>
+                  Relancer les analyses <ArrowUpRight className="h-3 w-3 ml-1" />
                 </Button>
-              </div>
+              )}
             </CardContent>
           </Card>
-
           <Card className="border-border card-neutral rounded-xl">
-            <CardContent className="p-6">
-              <div className="flex items-start justify-between gap-3">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Priorités à attaquer</p>
-                  <div className="flex items-end gap-3 mt-2">
-                    <p className="text-3xl font-bold">{statusStats.high}</p>
-                    <p className="text-sm text-muted-foreground mb-1">comptes 8–10</p>
-                  </div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Crédits</p>
+                  <p className="text-2xl font-bold mt-1">{Math.max(0, remaining)}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">analyses restantes ce mois</p>
                 </div>
-                <div className="h-10 w-10 rounded-xl bg-muted flex items-center justify-center">
-                  <Flame className="h-5 w-5 text-muted-foreground" />
+                <div className="h-12 w-12 rounded-xl bg-muted flex items-center justify-center">
+                  <Coins className="h-6 w-6 text-muted-foreground" />
                 </div>
               </div>
-              <div className="mt-4 space-y-2 text-xs text-muted-foreground">
-                <div className="flex items-center justify-between">
-                  <span>Priorité moyenne (5–7)</span>
-                  <span className="font-mono">{statusStats.medium}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Priorité basse (1–4)</span>
-                  <span className="font-mono">{statusStats.low}</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border card-neutral rounded-xl">
-            <CardContent className="p-6">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Inbox signaux</p>
-                  <div className="flex items-end gap-3 mt-2">
-                    <p className="text-3xl font-bold">{decisionInbox.length}</p>
-                    <p className="text-sm text-muted-foreground mb-1">à lire</p>
-                  </div>
-                </div>
-                <div className="h-10 w-10 rounded-xl bg-muted flex items-center justify-center">
-                  <Bell className="h-5 w-5 text-muted-foreground" />
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground mt-4">
-                Les signaux sont priorisés par score du compte. Idéal pour relancer au bon moment.
-              </p>
+              <Progress value={usagePercent} className="mt-3 h-2" />
             </CardContent>
           </Card>
         </motion.div>
@@ -432,6 +382,9 @@ export default function Dashboard() {
                 </div>
 
                 <div className="space-y-3">
+                  <p className="text-xs text-muted-foreground mb-2 leading-relaxed">
+                    {getNextActionSectionTip(firstName, nextActions.analyzing.length > 0, nextActions.errored.length > 0)}
+                  </p>
                   <div className="rounded-lg border border-border bg-muted/20 p-3">
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">En cours</p>
                     {nextActions.analyzing.length > 0 ? (
@@ -485,6 +438,13 @@ export default function Dashboard() {
                       <p className="text-sm text-muted-foreground mt-1">Aucun compte prêt pour l’instant.</p>
                     )}
                   </div>
+                  {getJarvisBonusTip(onboarding) && (
+                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 mt-3">
+                      <p className="text-xs text-foreground/90 leading-relaxed italic">
+                        {getJarvisBonusTip(onboarding)}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -496,9 +456,9 @@ export default function Dashboard() {
                     <Bell className="h-4 w-4 text-muted-foreground" />
                     Signaux à ne pas rater
                   </h3>
-                  <p className="text-xs text-muted-foreground">
-                    Priorisés par score du compte — cliquez pour ouvrir la fiche.
-                  </p>
+                  <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigate("/accounts")}>
+                    Voir mes comptes <ArrowUpRight className="h-3 w-3 ml-1" />
+                  </Button>
                 </div>
 
                 {decisionInbox.length === 0 ? (
@@ -517,7 +477,7 @@ export default function Dashboard() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {decisionInbox.map((it, idx) => (
+                        {decisionInbox.slice(0, 3).map((it, idx) => (
                           <TableRow
                             key={`${it.accountId}-${idx}`}
                             className="table-row-hover cursor-pointer"
@@ -544,164 +504,23 @@ export default function Dashboard() {
           </motion.div>
         )}
 
-        {/* Action queue (decision list) */}
-        {hasAccounts && (
-          <motion.div variants={fadeUp} className="mb-6">
-            <Card className="border-border card-neutral rounded-xl">
-              <CardContent className="p-6 space-y-4">
-                <div className="flex items-start justify-between gap-3 flex-wrap">
-                  <div>
-                    <h3 className="text-sm font-semibold flex items-center gap-2">
-                      <Layers className="h-4 w-4 text-muted-foreground" />
-                      Queue d’actions (pilotage)
-                    </h3>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Les prochains comptes à faire avancer, avec une “prochaine action” proposée à partir des données déjà disponibles.
-                    </p>
-                  </div>
-                  {cockpit.readyToday.length > 0 && (
-                    <Badge variant="secondary" className="text-xs bg-bellum-success/10 text-bellum-success border-bellum-success/20">
-                      {cockpit.readyToday.length} compte{cockpit.readyToday.length > 1 ? "s" : ""} prêt{cockpit.readyToday.length > 1 ? "s" : ""} à lancer
-                    </Badge>
-                  )}
-                </div>
-
-                <div className="table-premium-wrapper">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="hover:bg-transparent">
-                        <TableHead className="text-xs font-semibold">Compte</TableHead>
-                        <TableHead className="text-xs font-semibold w-24">Score</TableHead>
-                        <TableHead className="text-xs font-semibold">État</TableHead>
-                        <TableHead className="text-xs font-semibold">Prochaine action</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {cockpit.actionQueue.map((x: any) => (
-                        <TableRow key={x.id} className="table-row-hover cursor-pointer" onClick={() => navigate(`/accounts/${x.id}`)}>
-                          <TableCell className="align-top">
-                            <div className="font-medium flex items-center gap-2">
-                              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-secondary">
-                                <Building2 className="h-3.5 w-3.5 text-foreground/60" />
-                              </div>
-                              <div>
-                                <div className="text-sm font-semibold">{x.company}</div>
-                                <div className="text-xs text-muted-foreground">{x.sector}</div>
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="align-top"><PriorityBadge score={x.score} size="sm" /></TableCell>
-                          <TableCell className="align-top">
-                            <div className="flex flex-wrap gap-1.5">
-                              <Badge variant="secondary" className="text-[10px] bg-muted text-muted-foreground border-border">
-                                <Users className="h-3 w-3 mr-1" />{x.contacts}
-                              </Badge>
-                              <Badge variant="secondary" className="text-[10px] bg-muted text-muted-foreground border-border">
-                                <MessageSquareText className="h-3 w-3 mr-1" />{x.messages}
-                              </Badge>
-                              <Badge variant="secondary" className="text-[10px] bg-muted text-muted-foreground border-border">
-                                <Bell className="h-3 w-3 mr-1" />{x.signals}
-                              </Badge>
-                            </div>
-                          </TableCell>
-                          <TableCell className="align-top">
-                            <div className="text-sm font-medium text-foreground">{x.next}</div>
-                            <div className="text-xs text-muted-foreground mt-0.5">{x.why}</div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                      {cockpit.actionQueue.length === 0 && (
-                        <TableRow>
-                          <TableCell colSpan={4} className="text-center text-muted-foreground py-10">
-                            Aucun compte prêt à être piloté. Lancez une analyse pour alimenter ce cockpit.
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        )}
-
-        {/* Recent accounts or empty state */}
+        {/* Un seul CTA portefeuille */}
         <motion.div variants={fadeUp}>
           {hasAccounts ? (
-            <>
-              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-                <h3 className="text-sm font-semibold flex items-center gap-2">
-                  <Building2 className="h-4 w-4 text-muted-foreground" />
-                  Portefeuille (pilotable)
-                </h3>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Badge variant="secondary" className="text-xs bg-muted text-muted-foreground border-border">
-                    {statusStats.completed} prêts
-                  </Badge>
-                  <Badge variant="secondary" className="text-xs bg-muted text-muted-foreground border-border">
-                    {statusStats.analyzing} en cours
-                  </Badge>
-                  {statusStats.errored > 0 && (
-                    <Badge variant="secondary" className="text-xs bg-destructive/10 text-destructive border-destructive/20">
-                      {statusStats.errored} en erreur
-                    </Badge>
-                  )}
+            <Card className="border-border card-neutral rounded-xl">
+              <CardContent className="p-6 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium">Portefeuille · {statusStats.total} compte{statusStats.total > 1 ? "s" : ""}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {statusStats.completed} prêts · {statusStats.analyzing} en cours
+                    {statusStats.errored > 0 ? ` · ${statusStats.errored} en erreur` : ""}
+                  </p>
                 </div>
-              </div>
-              <div className="table-premium-wrapper">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead className="text-xs font-semibold">Entreprise</TableHead>
-                      <TableHead className="text-xs font-semibold">Score</TableHead>
-                      <TableHead className="text-xs font-semibold">Statut</TableHead>
-                      <TableHead className="text-xs font-semibold">Signaux</TableHead>
-                      <TableHead className="text-xs font-semibold">Dernière analyse</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {sortedAccounts.slice(0, 8).map((a: any) => (
-                      <TableRow key={a.id} className="table-row-hover cursor-pointer" onClick={() => navigate(`/accounts/${a.id}`)}>
-                        <TableCell className="font-medium flex items-center gap-2">
-                          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-secondary">
-                            <Building2 className="h-3.5 w-3.5 text-foreground/60" />
-                          </div>
-                          {a.company_name ?? a.companyName}
-                        </TableCell>
-                        <TableCell><PriorityBadge score={a.priority_score ?? a.priorityScore} size="sm" /></TableCell>
-                        <TableCell>
-                          <Badge
-                            variant="secondary"
-                            className={cn(
-                              "text-xs",
-                              a.status === "completed" && "bg-bellum-success/10 text-bellum-success border-bellum-success/20",
-                              a.status === "analyzing" && "bg-bellum-warning/10 text-bellum-warning border-bellum-warning/20",
-                              a.status === "error" && "bg-destructive/10 text-destructive border-destructive/20"
-                            )}
-                          >
-                            {a.status === "completed" ? "✅ Prêt" : a.status === "error" ? "⚠️ Erreur" : "⏳ En cours"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {Array.isArray(a.recent_signals) ? a.recent_signals.length : 0}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {new Date(a.created_at ?? a.createdAt).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-              <div className="mt-3 flex items-center justify-between flex-wrap gap-2">
-                <p className="text-xs text-muted-foreground">
-                  Ce tableau est la vue “décision” : score, statut, signaux. Le reste se fait dans la fiche compte.
-                </p>
-                <Button variant="outline" size="sm" className="text-xs" onClick={() => navigate("/accounts")}>
-                  Voir tous les comptes <ArrowUpRight className="h-3.5 w-3.5 ml-1" />
+                <Button variant="outline" onClick={() => navigate("/accounts")} className="gap-2">
+                  Voir tout mon portefeuille <ArrowUpRight className="h-4 w-4" />
                 </Button>
-              </div>
-            </>
+              </CardContent>
+            </Card>
           ) : (
             <EmptyState type="accounts" />
           )}

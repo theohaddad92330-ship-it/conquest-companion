@@ -172,8 +172,10 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
           rawContacts.push(...companyEmployees)
           apifyWorked = true
         }
-        if (rawContacts.length < 30 && research.linkedinSearchKeywords) {
-          const searchResults = await apify_ProfileSearch(companyName, research.linkedinSearchKeywords, traceId, onboardingData)
+        const topicKeywords = buildTopicKeywordsForApify(onboardingData)
+        const searchQueries = buildProfileSearchQueries(companyName, research.linkedinSearchKeywords, topicKeywords)
+        for (const query of searchQueries) {
+          const searchResults = await apify_ProfileSearch(companyName, query, traceId, onboardingData)
           if (searchResults.length > 0) {
             rawContacts.push(...searchResults)
             apifyWorked = true
@@ -192,7 +194,7 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
         rawContacts = []
       }
       if (rawContacts.length === 0) {
-        console.log(JSON.stringify({ event: 'apify_called_zero_fallback', traceId, message: 'Apify invoqué mais 0 contacts — fallback web + génération (min 35 contacts)' }))
+        console.log(JSON.stringify({ event: 'apify_called_zero_fallback', traceId, message: 'Apify invoqué mais 0 contacts — fallback web + génération (cible 150-300 contacts)' }))
       }
       console.log(JSON.stringify({ event: 'phase2_done', traceId, totalContacts: rawContacts.length, apifyWorked }))
     } else {
@@ -443,7 +445,7 @@ RÈGLES :
 
 ANTI-HALLUCINATION : chaque donnée sourcée. Si non trouvé → "Non détecté". Ne jamais inventer.
 
-PEOPLEMENTIONED : extraire TOUTES les personnes RÉELLES mentionnées dans le contenu (nominations, interviews, communiqués, listes, organigrammes). TOUS NIVEAUX : C-level, directeurs, chefs de projet, achats, RSSI, responsables métier, pas seulement les C-level. Viser 30 à 80 noms si le contenu le permet. Chaque entrée : name, title, context, source. Ne pas inventer de noms.
+PEOPLEMENTIONED : extraire TOUTES les personnes RÉELLES mentionnées dans le contenu (nominations, interviews, communiqués, listes, organigrammes). TOUS NIVEAUX : C-level, directeurs, chefs de projet, achats, RSSI, responsables métier. Viser 50 à 150 noms si le contenu le permet. Chaque entrée : name, title, context, source. Ne pas inventer de noms.
 
 Réponds UNIQUEMENT en JSON valide. Pas de texte avant/après. Pas de backticks.`
 
@@ -462,7 +464,8 @@ RÈGLES CRITIQUES :
 - esnSynergies : identifier les ESN (SSII, cabinets) CITÉES ou fortement probables déjà en place sur le compte (compte-rendus, références, partenariats, offres, annonces). Pour chacune : nom, type de présence (rang 1, niche, partenaire), niveau de certitude (0-100), pourquoi tu le penses, et conseil concret pour l'utilisateur (synergie, sous-traitance, co-traitance, entrée par eux). Adapter ces conseils à la taille de l'ESN utilisatrice (petite ESN = privilégier synergies / sous-traitance, pas frontal).
 - Rechercher dans les données : baisses de budget IT, blocages ou perte de référencement rang 1, difficultés fournisseurs, autres filiales connues (ex. RESG pour SocGen).
 - priorityScore : DOIT refléter la difficulté pour CE profil. Ex. si l'utilisateur a 0-20 consultants (petite ESN), ouvrir un grand compte = très dur → score 4-6 pas 9. Si 200+ consultants et bon alignement → score 8-9. Justification détaillée dans priorityJustification.overall.
-- peopleMentioned : lister TOUTES les personnes réelles trouvées dans le contenu (tous niveaux). Plus il y a de noms dans les pages scrapées, plus tu dois en extraire (viser 30-80). Ne pas s'arrêter aux C-level.
+- peopleMentioned : lister TOUTES les personnes réelles trouvées dans le contenu (tous niveaux). Plus il y a de noms dans les pages scrapées, plus tu dois en extraire (viser 50-150). Ne pas s'arrêter aux C-level.
+- linkedinSearchKeywords : generic doit inclure les sujets que l'utilisateur attaque : Data, Cyber, IT, Tech, Agile, Scrum, Dev, Digital (en plus de DSI, CTO, Achats IT). byEntity : pour chaque entité identifiée, des mots-clés ciblés (ex. Head of Data, RSSI, Chef de projet digital).
 
 Produis ce JSON :
 {
@@ -509,8 +512,9 @@ Produis ce JSON :
 // ============================================================
 // CLAUDE APPEL 2 — BELLUM-CONTACTS
 // ============================================================
-const MAX_RAW_CONTACTS_FOR_PROMPT = 80
-const TARGET_MIN_CONTACTS = 35 // minimum garanti par compte (sans Apify = fallback web + génération)
+const MAX_RAW_CONTACTS_FOR_PROMPT = 250
+const TARGET_MIN_CONTACTS = 150
+const TARGET_IDEAL_CONTACTS = 300
 
 function parseContactsResult(result: any): { contacts: any[], meta: any } {
   if (!result || typeof result !== 'object') return { contacts: [], meta: null }
@@ -552,7 +556,7 @@ Angles : ${JSON.stringify(anglesTitles)}
 Pains : ${painsStr}
 
 RÈGLES CONTACTS :
-- Objectif : au moins ${TARGET_MIN_CONTACTS} contacts par compte. PAS QUE DES C-LEVEL : varier impérativement — sponsors (quelques-uns), champions (directeurs, heads), operational (chefs de projet, tech leads), purchasing (achats IT), influencer (RSSI, experts). Majorité champions + operational + achats pour avoir des portes d'entrée actionnables.
+- Objectif : entre ${TARGET_MIN_CONTACTS} et ${TARGET_IDEAL_CONTACTS} contacts par compte. C'est la force du produit : TOUTES les entités, TOUS les profils utiles (décideurs ET opérationnels) sur les sujets que l'utilisateur attaque (data, cyber, IT, agile, scrum, dev, digital). PAS QUE DES C-LEVEL : sponsors, champions (directeurs, heads), operational (chefs de projet, tech leads), purchasing (achats IT), influencer (RSSI, experts). Majorité champions + operational + achats.
 ${geoOnlyFranceEU ? '- GÉO : privilégier contacts France / Europe uniquement.' : ''}
 
 MESSAGES — CRÉER DE L'ATTENTION (décideurs B2B sursollicités) :
@@ -578,29 +582,28 @@ Réponds UNIQUEMENT en JSON valide : {"contacts": [{ "name", "title", "entity", 
       about: String(c.about || '').slice(0, 200),
       location: c.location?.linkedinText || c.location?.parsed?.city || '',
     }))
-    userPrompt = `Enrichis ces ${simplified.length} contacts LinkedIn pour "${companyName}". Retourne un JSON avec "contacts" (tableau d'objets avec name, title, entity, location, role, priority, summary, whyContact, linkedinUrl, email, linkedinMessage, emailMessage, followupMessage), "organigramme", "decisionChain", "uncoveredZones".
+    userPrompt = `Enrichis ces ${simplified.length} contacts LinkedIn pour "${companyName}". Pour CHAQUE contact : name, title, entity, location, role, priority, summary, whyContact, linkedinUrl, email, linkedinMessage, emailMessage, followupMessage. Si la liste fournie est inférieure à ${TARGET_MIN_CONTACTS}, complète avec des profils types (même entités, sujets data/cyber/agile/dev) pour atteindre entre ${TARGET_MIN_CONTACTS} et ${TARGET_IDEAL_CONTACTS} contacts. Retourne un JSON avec "contacts", "organigramme", "decisionChain", "uncoveredZones".
 
 ${JSON.stringify(simplified, null, 2)}`
   } else if (fromWebMentioned && rawContacts.length > 0) {
     const limited = rawContacts.slice(0, MAX_RAW_CONTACTS_FOR_PROMPT)
     const needCompletion = limited.length < TARGET_MIN_CONTACTS
-    const targetTotal = needCompletion ? TARGET_MIN_CONTACTS : limited.length
+    const targetTotal = needCompletion ? TARGET_IDEAL_CONTACTS : Math.min(limited.length + 50, TARGET_IDEAL_CONTACTS)
     if (needCompletion) {
-      userPrompt = `Voici des personnes RÉELLES extraites du web pour "${companyName}" (${limited.length} noms). CONSERVE leurs noms et postes. Enrichis CHAQUE fiche : entity, role, priority, summary, whyContact, linkedinMessage, emailMessage, followupMessage. Puis complète avec des profils types suggérés (noms fictifs, postes réalistes, TOUS NIVEAUX : pas que C-level — champions, opérationnels, achats) pour atteindre au moins ${targetTotal} contacts. Pour les compléments, mets dans summary "Profil type suggéré (non sourcé web)".
+      userPrompt = `Voici des personnes RÉELLES extraites du web pour "${companyName}" (${limited.length} noms). CONSERVE leurs noms et postes. Enrichis CHAQUE fiche : entity, role, priority, summary, whyContact, linkedinMessage, emailMessage, followupMessage. Puis complète avec des profils types (noms fictifs, postes réalistes, TOUS NIVEAUX — data, cyber, IT, agile, scrum, dev, digital) pour atteindre entre ${TARGET_MIN_CONTACTS} et ${TARGET_IDEAL_CONTACTS} contacts. Pour les compléments : summary "Profil type suggéré (non sourcé web)".
 Retourne le même format JSON : {"contacts": [...], "organigramme": [], "decisionChain": [], "uncoveredZones": []}.
 
 ${JSON.stringify(limited, null, 2)}`
     } else {
-      userPrompt = `Voici des personnes RÉELLES extraites du web pour "${companyName}" (${limited.length} noms). CONSERVE leurs noms et postes exacts. Enrichis UNIQUEMENT ces contacts : pour chacun, remplis entity (filiale/BU), role, priority, summary, whyContact, linkedinMessage, emailMessage, followupMessage. linkedinUrl et email peuvent rester vides. NE GÉNÈRE PAS d'autres contacts — seulement enrichir cette liste.
+      userPrompt = `Voici des personnes RÉELLES extraites du web pour "${companyName}" (${limited.length} noms). CONSERVE leurs noms et postes exacts. Enrichis CHAQUE contact : entity (filiale/BU), role, priority, summary, whyContact, linkedinMessage, emailMessage, followupMessage. Si tu peux en suggérer d'autres (même entités, sujets data/cyber/agile/dev) pour atteindre jusqu'à ${TARGET_IDEAL_CONTACTS}, ajoute-les avec summary "Profil type suggéré". Sinon enrichis uniquement cette liste.
 Retourne le même format JSON : {"contacts": [...], "organigramme": [], "decisionChain": [], "uncoveredZones": []}.
 
 ${JSON.stringify(limited, null, 2)}`
     }
   } else {
-    userPrompt = `Génère au moins ${TARGET_MIN_CONTACTS} contacts RÉALISTES (noms fictifs, postes/entités cohérents) pour "${companyName}".
+    userPrompt = `Génère entre ${TARGET_MIN_CONTACTS} et ${TARGET_IDEAL_CONTACTS} contacts RÉALISTES (noms fictifs, postes/entités cohérents) pour "${companyName}".
 Entités : ${entitiesStr}
-DIVERSITÉ OBLIGATOIRE — pas que des C-level : pour chaque entité, génère des décideurs (2-3), des champions (directeurs, heads), des opérationnels (chefs de projet, tech leads), des achats IT, des influenceurs (RSSI, experts). Majorité champions + opérationnels + achats. Chaque contact avec linkedinMessage, emailMessage, followupMessage (courts et personnalisés).
-Summary : "profil type suggéré" pour chaque contact.
+Couverture : TOUTES les entités, décideurs ET opérationnels sur les sujets data, cyber, IT, agile, scrum, dev, digital. Pour chaque entité : décideurs, champions (directeurs, heads), opérationnels (chefs de projet, tech leads), achats IT, RSSI/experts. Chaque contact avec linkedinMessage, emailMessage, followupMessage (courts et personnalisés). Summary : "profil type suggéré".
 Même format JSON : {"contacts": [...], "organigramme": [], "decisionChain": [], "uncoveredZones": []}.`
   }
 
@@ -617,12 +620,12 @@ Même format JSON : {"contacts": [...], "organigramme": [], "decisionChain": [],
   // Fallback 1 : si on avait des contacts web/Apify, enrichir seulement un sous-ensemble (réponse plus courte = plus fiable)
   if (rawContacts.length > 0) {
     console.log(JSON.stringify({ event: 'claude_contacts_fallback_partial', traceId, rawCount: rawContacts.length }))
-    const subset = rawContacts.slice(0, 25).map((c: any) => ({
+    const subset = rawContacts.slice(0, 50).map((c: any) => ({
       name: c.name || `${c.firstName || ''} ${c.lastName || ''}`.trim(),
       title: c.title || c.headline,
       about: (c.about || c.context || '').slice(0, 200),
     }))
-    const fallbackPrompt = `Enrichis ces ${subset.length} contacts pour "${companyName}". Pour chacun : entity, role, priority, summary, whyContact, linkedinMessage, emailMessage (subject + body), followupMessage (subject + body). Conserve nom et poste. Si tu en produis moins de ${TARGET_MIN_CONTACTS}, complète avec des profils types (champions, opérationnels, achats) jusqu'à au moins ${TARGET_MIN_CONTACTS}. JSON : {"contacts": [...]}.`
+    const fallbackPrompt = `Enrichis ces ${subset.length} contacts pour "${companyName}". Pour chacun : entity, role, priority, summary, whyContact, linkedinMessage, emailMessage (subject + body), followupMessage (subject + body). Conserve nom et poste. Complète avec des profils types (data, cyber, agile, dev, champions, opérationnels, achats) jusqu'à entre ${TARGET_MIN_CONTACTS} et ${TARGET_IDEAL_CONTACTS} contacts. JSON : {"contacts": [...]}.`
     const fallbackResult = await callClaudeAPI(systemPrompt, fallbackPrompt, 12000, traceId, 'contacts_fallback', 90000)
     if (fallbackResult) {
       const parsed = parseContactsResult(fallbackResult)
@@ -635,8 +638,8 @@ Même format JSON : {"contacts": [...], "organigramme": [], "decisionChain": [],
 
   // Fallback 2 : génération minimale (profils types avec messages)
   console.log(JSON.stringify({ event: 'claude_contacts_retry', traceId, reason: result ? 'empty_list' : 'null_response' }))
-  const fallbackSystem = `Tu es BELLUM. Génère des contacts B2B en JSON uniquement. Au moins ${TARGET_MIN_CONTACTS} contacts. Diversité : pas que C-level — champions, operational, purchasing, influencer. Chaque contact : name, title, entity, role, priority, summary, whyContact, linkedinMessage, emailMessage {subject, body}, followupMessage {subject, body}. Pas de texte avant/après.`
-  const fallbackUser = `Génère au moins ${TARGET_MIN_CONTACTS} contacts pour "${companyName}". Secteur: ${research.sector || 'N/A'}. Entités: ${entitiesStr}. Noms fictifs, postes réalistes. Tous niveaux : décideurs, directeurs, chefs de projet, achats IT, RSSI. Messages courts.`
+  const fallbackSystem = `Tu es BELLUM. Génère des contacts B2B en JSON uniquement. Entre ${TARGET_MIN_CONTACTS} et ${TARGET_IDEAL_CONTACTS} contacts. Toutes entités, sujets data/cyber/IT/agile/dev/digital. Chaque contact : name, title, entity, role, priority, summary, whyContact, linkedinMessage, emailMessage {subject, body}, followupMessage {subject, body}. Pas de texte avant/après.`
+  const fallbackUser = `Génère entre ${TARGET_MIN_CONTACTS} et ${TARGET_IDEAL_CONTACTS} contacts pour "${companyName}". Secteur: ${research.sector || 'N/A'}. Entités: ${entitiesStr}. Noms fictifs, postes réalistes. Décideurs, directeurs, chefs de projet, achats IT, RSSI, profils data/cyber/agile/dev. Messages courts.`
   const retryResult = await callClaudeAPI(fallbackSystem, fallbackUser, 10000, traceId, 'contacts_retry', 90000)
   if (retryResult) {
     const parsed = parseContactsResult(retryResult)
@@ -784,20 +787,45 @@ async function callClaudeAPI(systemPrompt: string, userPrompt: string, maxTokens
   }
 }
 
+function buildTopicKeywordsForApify(onboardingData: any): string[] {
+  const offers = onboardingData.offers || []
+  const defaultTopics = ['Data', 'Cyber', 'IT', 'Tech', 'Agile', 'Scrum', 'Dev', 'Digital']
+  if (!Array.isArray(offers) || offers.length === 0) return defaultTopics
+  const normalized = offers.map((o: any) => String(o).trim()).filter(Boolean).slice(0, 8)
+  return normalized.length >= 3 ? normalized : [...normalized, ...defaultTopics].slice(0, 8)
+}
+
+function buildProfileSearchQueries(companyName: string, keywords: any, topicKeywords: string[]): string[] {
+  const generic = (keywords?.generic || ['DSI', 'CTO', 'Achats IT']).slice(0, 4)
+  const queries: string[] = []
+  queries.push(`${companyName} ${generic.join(' ')}`)
+  if (topicKeywords.length >= 2) {
+    queries.push(`${companyName} ${topicKeywords.slice(0, 3).join(' ')}`)
+    if (topicKeywords.length >= 5) queries.push(`${companyName} ${topicKeywords.slice(3, 6).join(' ')}`)
+  }
+  const byEntity = keywords?.byEntity || []
+  for (let i = 0; i < Math.min(2, byEntity.length); i++) {
+    const ent = byEntity[i]
+    const entName = typeof ent === 'object' && ent?.entity ? ent.entity : String(ent)
+    const kw = (typeof ent === 'object' && Array.isArray(ent?.keywords) ? ent.keywords : ['DSI', 'Head']).slice(0, 2)
+    queries.push(`${companyName} ${entName} ${kw.join(' ')}`)
+  }
+  return queries.slice(0, 3)
+}
+
 // ============================================================
-// APIFY — Company Employees (sync comme n8n : 1 appel, on attend le résultat)
+// APIFY — Company Employees (sync : 1 appel, on attend le résultat)
 // ============================================================
 async function apify_CompanyEmployees(companyName: string, keywords: any, traceId: string, braveLinkedinUrl?: string | null, _onboardingData?: any): Promise<any[]> {
   if (!APIFY_API_TOKEN) return []
   console.log(JSON.stringify({ event: 'apify_employees_start', traceId, companyName }))
 
-  const keywordFilter = (keywords?.generic || ['DSI', 'CTO', 'Data', 'Cloud', 'IT', 'Digital']).join(' ')
+  const keywordFilter = (keywords?.generic || ['DSI', 'CTO', 'Data', 'Cloud', 'IT', 'Digital', 'Agile', 'Cyber']).join(' ')
   const actorId = 'harvestapi~linkedin-company-employees'
-  // Ne pas envoyer locations pour maximiser les résultats (filtrage géo fait côté Claude si besoin)
   const buildInput = (companies: string[]) => ({
     companies,
     searchQuery: keywordFilter || undefined,
-    maxItems: 120,
+    maxItems: 250,
     companyBatchMode: 'all_at_once',
     profileScraperMode: 'Short ($4 per 1k)',
   })
@@ -858,20 +886,21 @@ async function apify_CompanyEmployees(companyName: string, keywords: any, traceI
 // ============================================================
 // APIFY — Profile Search (Actor complémentaire)
 // ============================================================
-async function apify_ProfileSearch(companyName: string, keywords: any, traceId: string, _onboardingData?: any): Promise<any[]> {
+async function apify_ProfileSearch(companyName: string, searchQueryOrKeywords: string | any, traceId: string, _onboardingData?: any): Promise<any[]> {
   if (!APIFY_API_TOKEN) return []
-  console.log(JSON.stringify({ event: 'apify_search_start', traceId }))
+  const searchQuery = typeof searchQueryOrKeywords === 'string'
+    ? searchQueryOrKeywords
+    : `${companyName} ${(searchQueryOrKeywords?.generic || ['DSI', 'CTO']).slice(0, 3).join(' ')}`
+  console.log(JSON.stringify({ event: 'apify_search_start', traceId, searchQuery: searchQuery.slice(0, 80) }))
 
   try {
-    const searchQuery = `${companyName} ${(keywords?.generic || ['DSI', 'CTO']).slice(0, 3).join(' ')}`
-
     const actorId = 'harvestapi~linkedin-profile-search'
     const runRes = await fetch(`https://api.apify.com/v2/acts/${actorId}/runs?token=${APIFY_API_TOKEN}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         searchQuery,
-        maxItems: 50,
+        maxItems: 100,
       }),
       signal: AbortSignal.timeout(15000),
     })

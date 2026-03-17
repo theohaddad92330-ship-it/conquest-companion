@@ -20,21 +20,62 @@ export function useCancelAnalysis() {
   };
 }
 
-export function useAccounts() {
+export function useAccounts(options?: { includeArchived?: boolean }) {
   const { user } = useAuth();
+  const includeArchived = options?.includeArchived ?? false;
   const { data: accounts = [], isLoading, error, refetch } = useQuery({
-    queryKey: ['accounts', user?.id],
+    queryKey: ['accounts', user?.id, includeArchived],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('accounts')
         .select('*')
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return (data || []) as AccountAnalysis[];
+      let list = (data || []) as (AccountAnalysis & { contact_count?: number; archived_at?: string | null })[];
+      if (!includeArchived) {
+        list = list.filter((a) => a.archived_at == null);
+      }
+      if (list.length === 0) return list;
+      const accountIds = list.map((a) => a.id);
+      const { data: contactRows } = await supabase
+        .from('contacts')
+        .select('account_id')
+        .in('account_id', accountIds);
+      const countByAccount: Record<string, number> = {};
+      for (const row of contactRows || []) {
+        const id = (row as { account_id: string }).account_id;
+        countByAccount[id] = (countByAccount[id] || 0) + 1;
+      }
+      return list.map((a) => ({ ...a, contact_count: countByAccount[a.id] ?? 0 }));
     },
     enabled: !!user,
   });
   return { accounts, isLoading, error, refetch };
+}
+
+/** Supprime définitivement un compte (et ses contacts, angles, plans en cascade). */
+export function useDeleteAccount() {
+  const queryClient = useQueryClient();
+  return async (accountId: string) => {
+    const { error } = await supabase.from('accounts').delete().eq('id', accountId);
+    if (error) throw error;
+    queryClient.invalidateQueries({ queryKey: ['accounts'] });
+    queryClient.invalidateQueries({ queryKey: ['account', accountId] });
+  };
+}
+
+/** Archive un compte (masqué de la liste par défaut). */
+export function useArchiveAccount() {
+  const queryClient = useQueryClient();
+  return async (accountId: string) => {
+    const { error } = await supabase
+      .from('accounts')
+      .update({ archived_at: new Date().toISOString() })
+      .eq('id', accountId);
+    if (error) throw error;
+    queryClient.invalidateQueries({ queryKey: ['accounts'] });
+    queryClient.invalidateQueries({ queryKey: ['account', accountId] });
+  };
 }
 
 export function useAccount(id: string | undefined, options?: { refetchWhenAnalyzing?: boolean }) {

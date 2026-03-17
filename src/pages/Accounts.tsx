@@ -17,7 +17,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { useToast } from "@/hooks/use-toast";
-import { useAccounts, useCancelAnalysis } from "@/hooks/useAccounts";
+import { useAccounts, useCancelAnalysis, useDeleteAccount, useArchiveAccount } from "@/hooks/useAccounts";
 
 const fadeUp = { hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } };
 const PAGE_SIZE = 7;
@@ -27,6 +27,8 @@ export default function Accounts() {
   const { toast } = useToast();
   const { accounts, isLoading, error, refetch } = useAccounts();
   const cancelAnalysis = useCancelAnalysis();
+  const deleteAccount = useDeleteAccount();
+  const archiveAccount = useArchiveAccount();
   const [search, setSearch] = useState("");
   const [sectorFilter, setSectorFilter] = useState("all");
   const [scoreFilter, setScoreFilter] = useState("all");
@@ -68,7 +70,7 @@ export default function Accounts() {
     const createdB = b.created_at ?? b.createdAt;
 
     if (sortBy === "score") return scoreB - scoreA;
-    if (sortBy === "contacts") return (20 + scoreB * 3) - (20 + scoreA * 3);
+    if (sortBy === "contacts") return (b.contact_count ?? 0) - (a.contact_count ?? 0);
     return new Date(createdB).getTime() - new Date(createdA).getTime();
   });
 
@@ -212,7 +214,7 @@ export default function Accounts() {
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm">{account.sector || "—"}</TableCell>
                   <TableCell><PriorityBadge score={account.priority_score ?? account.priorityScore} size="sm" /></TableCell>
-                  <TableCell className="text-sm text-muted-foreground font-mono">{20 + (account.priority_score ?? account.priorityScore) * 3}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground font-mono">{account.contact_count ?? 0}</TableCell>
                   <TableCell>
                     <Badge variant="secondary" className="text-xs">
                       {account.status === "completed" ? "✅ Prêt" : "⏳ En cours"}
@@ -257,7 +259,16 @@ export default function Accounts() {
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           className="gap-2 text-sm"
-                          onClick={() => toast({ title: "Compte archivé", description: `${account.company_name ?? account.companyName} a été archivé.` })}
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            try {
+                              await archiveAccount(account.id);
+                              await refetch();
+                              toast({ title: "Compte archivé", description: `${account.company_name ?? account.companyName} n'apparaît plus dans la liste.` });
+                            } catch {
+                              toast({ title: "Erreur", description: "Impossible d'archiver le compte.", variant: "destructive" });
+                            }
+                          }}
                         >
                           <Archive className="h-3.5 w-3.5" />Archiver
                         </DropdownMenuItem>
@@ -282,7 +293,15 @@ export default function Accounts() {
                               <AlertDialogCancel>Annuler</AlertDialogCancel>
                               <AlertDialogAction
                                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                onClick={() => toast({ title: "Compte supprimé", description: `${account.company_name ?? account.companyName} a été supprimé.` })}
+                                onClick={async () => {
+                                  try {
+                                    await deleteAccount(account.id);
+                                    await refetch();
+                                    toast({ title: "Compte supprimé", description: `${account.company_name ?? account.companyName} a été supprimé définitivement.` });
+                                  } catch {
+                                    toast({ title: "Erreur", description: "Impossible de supprimer le compte.", variant: "destructive" });
+                                  }
+                                }}
                               >
                                 Supprimer
                               </AlertDialogAction>

@@ -25,6 +25,7 @@ import type { AccountAnalysis, Contact, AttackAngle, ActionPlan } from "@/types/
 import { generateCSV, downloadCSV } from "@/lib/export-csv";
 import { safeString, cn } from "@/lib/utils";
 import { FranceSitesMap } from "@/components/FranceSitesMap";
+import { getScoringIntro, getOuvrirCompteTip } from "@/lib/personalized-copy";
 
 const fadeUp = { hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } };
 
@@ -746,7 +747,7 @@ function TabPlanHebdo({ raw }: { raw: unknown }) {
   );
 }
 
-function TabEvaluation({ raw, account, onboardingData }: { raw: unknown; account: AccountAnalysis; onboardingData?: any }) {
+function TabEvaluation({ raw, account, onboardingData, firstName }: { raw: unknown; account: AccountAnalysis; onboardingData?: any; firstName?: string }) {
   // Source de vérité : le score & la justification affichés dans le bandeau général
   const scoreTop = typeof account.priority_score === "number" ? account.priority_score : Number(account.priority_score ?? 0) || 0;
   const topJustification =
@@ -817,7 +818,7 @@ function TabEvaluation({ raw, account, onboardingData }: { raw: unknown; account
             <h2 className="font-display text-base font-semibold">Scoring business & décision</h2>
           </div>
           <p className="text-sm text-muted-foreground leading-relaxed">
-            Cette vue consolide le score du compte, les facteurs de décision, la recommandation GO/NO-GO et la stratégie pour ouvrir le compte. Utilisez-la pour prioriser vos actions et choisir les bonnes portes d&apos;entrée.
+            {getScoringIntro(firstName ?? "", account.company_name ?? account.companyName ?? "", onboardingData ?? {})}
           </p>
         </CardContent>
       </Card>
@@ -943,7 +944,7 @@ function TabEvaluation({ raw, account, onboardingData }: { raw: unknown; account
               <h3 className="font-display text-base font-semibold">Comment ouvrir ce compte</h3>
             </div>
             <p className="text-xs text-muted-foreground">
-              Stratégie d&apos;entrée et portes d&apos;entrée recommandées pour ce compte, en cohérence avec le score et votre profil ESN.
+              {getOuvrirCompteTip(firstName ?? "", onboardingData ?? {})}
             </p>
             {ouvrir?.strategy != null && safeString(ouvrir.strategy) !== "—" && (
               <div className="rounded-lg bg-muted/30 p-4 space-y-2">
@@ -1454,7 +1455,7 @@ export default function AccountDetail() {
         <TabsContent value="plan" className="mt-6"><TabPlan angles={angles as AttackAngle[]} actionPlan={actionPlan as ActionPlan | null} /></TabsContent>
         <TabsContent value="offres" className="mt-6"><TabOffresConstruire raw={account.raw_analysis} /></TabsContent>
         <TabsContent value="plan-hebdo" className="mt-6"><TabPlanHebdo raw={account.raw_analysis} /></TabsContent>
-        <TabsContent value="evaluation" className="mt-6"><TabEvaluation raw={account.raw_analysis} account={account} onboardingData={profile?.onboarding_data} /></TabsContent>
+        <TabsContent value="evaluation" className="mt-6"><TabEvaluation raw={account.raw_analysis} account={account} onboardingData={profile?.onboarding_data} firstName={profile?.full_name?.split(" ")[0]} /></TabsContent>
         <TabsContent value="messages" className="mt-6"><TabMessages contacts={contacts as Contact[]} /></TabsContent>
       </Tabs>
       </div>

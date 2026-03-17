@@ -1,6 +1,20 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { Search as SearchIcon, CheckCircle, Loader2, Circle, AlertTriangle } from "lucide-react";
+import {
+  Search as SearchIcon,
+  CheckCircle,
+  Loader2,
+  Circle,
+  AlertTriangle,
+  Crosshair,
+  Radio,
+  MapPin,
+  DoorOpen,
+  Building2,
+  UserCircle,
+  MessageSquare,
+  Check,
+} from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -20,13 +34,13 @@ interface Step {
 }
 
 const initialSteps: Step[] = [
-  { label: "On récupère le contexte", status: "pending" },
-  { label: "On trie l’info utile", status: "pending" },
-  { label: "On prépare la fiche", status: "pending" },
-  { label: "On cherche des contacts", status: "pending" },
-  { label: "On organise par entité", status: "pending" },
-  { label: "On enrichit les profils", status: "pending" },
-  { label: "On prépare des messages", status: "pending" },
+  { label: "Bellum analyse le périmètre et les signaux", status: "pending" },
+  { label: "Croisement des sources et tri de l’info utile", status: "pending" },
+  { label: "Construction de la fiche compte", status: "pending" },
+  { label: "Identification des décideurs et portes d'entrée", status: "pending" },
+  { label: "Organisation par entité et chaîne de décision", status: "pending" },
+  { label: "Enrichissement des profils (contacts & messages)", status: "pending" },
+  { label: "Préparation des messages personnalisés", status: "pending" },
 ];
 
 const ESTIMATED_TOTAL_SECONDS = 120;
@@ -55,6 +69,63 @@ const LOADING_MESSAGES = [
   "On cherche des portes d’entrée par entité.",
   "Laissez la page ouverte. La mise à jour se fait toute seule.",
 ];
+
+const CONTACTS_PHASE_ESTIMATE_MIN = 5;
+const REASSURANCE_INTERVAL_SEC = 30;
+
+const AGENT_ACTIVITY_SOURCES: { icon: string; label: string }[] = [
+  { icon: "scope", label: "Analyse du périmètre cible" },
+  { icon: "signal", label: "Croisement des signaux récents" },
+  { icon: "map", label: "Cartographie des décideurs" },
+  { icon: "door", label: "Portes d'entrée" },
+  { icon: "entity", label: "Structuration par entité" },
+  { icon: "profile", label: "Enrichissement des profils" },
+  { icon: "message", label: "Préparation des messages" },
+  { icon: "check", label: "Vérification de cohérence" },
+];
+
+const AGENT_LOADING_PHRASES = [
+  "Bellum croise les informations pour une vision à 360° du compte.",
+  "L'agent identifie les signaux utiles à citer en premier contact.",
+  "Construction de la fiche et des angles d'attaque à partir des données recueillies.",
+  "Identification des décideurs et des portes d'entrée par entité.",
+  "Enrichissement des profils et préparation des messages personnalisés.",
+  "Vous pouvez quitter la page : la mise à jour se fera automatiquement.",
+  "Plusieurs sources sont analysées en parallèle pour maximiser la pertinence.",
+  "L'agent priorise les informations actionnables pour votre prospection.",
+];
+
+const REASSURANCE_POPUPS = [
+  "Pas de panique : on enrichit tout. Vous pouvez quitter la page en attendant.",
+  "Phase contacts & messages en cours (~5 min). Bellum prépare tout pour vous.",
+  "Enrichissement des profils en cours. Rien à faire, l'agent s'en occupe.",
+  "Vous pouvez aller prendre un café : la mise à jour se fera automatiquement.",
+  "Les messages personnalisés sont en cours de préparation. Patience.",
+];
+
+function shuffle<T>(arr: T[]): T[] {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+function ActivityIcon({ name }: { name: string }) {
+  const cls = "h-4 w-4 text-muted-foreground shrink-0";
+  switch (name) {
+    case "scope": return <Crosshair className={cls} />;
+    case "signal": return <Radio className={cls} />;
+    case "map": return <MapPin className={cls} />;
+    case "door": return <DoorOpen className={cls} />;
+    case "entity": return <Building2 className={cls} />;
+    case "profile": return <UserCircle className={cls} />;
+    case "message": return <MessageSquare className={cls} />;
+    case "check": return <Check className={cls} />;
+    default: return <Loader2 className={cls} />;
+  }
+}
 
 export default function SearchPage() {
   const [searchParams] = useSearchParams();
@@ -98,6 +169,27 @@ export default function SearchPage() {
       return s;
     });
   }, [analysis.progress, analysis.status]);
+
+  const shuffledSources = useMemo(
+    () => (isAnalyzingOrLoading && analysis.accountId ? shuffle(AGENT_ACTIVITY_SOURCES) : AGENT_ACTIVITY_SOURCES),
+    [isAnalyzingOrLoading, analysis.accountId]
+  );
+  const currentPhraseIndex = Math.floor(elapsedSeconds / 10) % AGENT_LOADING_PHRASES.length;
+  const isContactsPhase = isAnalyzingOrLoading && (analysis.progress >= 40 || elapsedSeconds >= 90);
+  const lastReassuranceRef = useRef(0);
+  useEffect(() => {
+    if (!analysis.accountId) return;
+    lastReassuranceRef.current = 0;
+  }, [analysis.accountId]);
+  useEffect(() => {
+    if (!isContactsPhase || !analysis.accountId) return;
+    const slot = Math.floor(elapsedSeconds / REASSURANCE_INTERVAL_SEC);
+    if (slot > 0 && slot > lastReassuranceRef.current) {
+      lastReassuranceRef.current = slot;
+      const msg = REASSURANCE_POPUPS[(slot - 1) % REASSURANCE_POPUPS.length];
+      toast({ title: "Bellum travaille", description: msg, duration: 6000 });
+    }
+  }, [isContactsPhase, elapsedSeconds, analysis.accountId, toast]);
 
   const handleSearch = useCallback(async () => {
     const trimmed = query.trim();
@@ -264,6 +356,11 @@ export default function SearchPage() {
                       {query} — {analysis.currentStep || "Analyse en cours..."}
                     </p>
                     <div className="flex items-center gap-2 flex-wrap">
+                      {isContactsPhase && (
+                        <span className="text-xs font-medium text-primary bg-primary/15 px-2.5 py-1 rounded-full">
+                          Contacts & messages — ~{CONTACTS_PHASE_ESTIMATE_MIN} min
+                        </span>
+                      )}
                       <span className="text-xs font-medium text-muted-foreground tabular-nums" title="Temps écoulé">
                         Écoulé : {formatElapsed(elapsedSeconds)}
                       </span>
@@ -296,11 +393,28 @@ export default function SearchPage() {
                       </Button>
                     </div>
                   </div>
-                  <ul className="text-xs text-muted-foreground mb-3 space-y-1 list-disc list-inside">
-                    {LOADING_MESSAGES.map((msg, i) => (
-                      <li key={i}>{msg}</li>
-                    ))}
-                  </ul>
+                  <div className="border-b border-border bg-muted/30 px-4 py-3 -mx-5 -mt-2 mb-3">
+                    <div className="flex items-center gap-2 overflow-hidden">
+                      <span className="text-xs font-medium text-muted-foreground shrink-0">Activité</span>
+                      <div className="flex items-center gap-4 min-w-0 flex-1 overflow-x-auto scrollbar-thin py-1">
+                        {shuffledSources.map((src, i) => (
+                          <motion.div
+                            key={`${src.icon}-${i}`}
+                            initial={{ opacity: 0, x: -8 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: i * 0.06, duration: 0.25 }}
+                            className="flex items-center gap-2 shrink-0 rounded-md bg-background/80 px-2.5 py-1.5 border border-border/60"
+                          >
+                            <ActivityIcon name={src.icon} />
+                            <span className="text-xs text-foreground/90 whitespace-nowrap">{src.label}</span>
+                          </motion.div>
+                        ))}
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2.5 italic">
+                      {AGENT_LOADING_PHRASES[currentPhraseIndex]}
+                    </p>
+                  </div>
                   {steps.map((step, i) => (
                     <div key={i} className="flex items-center justify-between py-1.5">
                       <div className="flex items-center gap-2.5">
@@ -346,7 +460,7 @@ export default function SearchPage() {
                         <Skeleton key={n} className="h-16 w-24 rounded-md" />
                       ))}
                     </div>
-                    <p className="text-xs text-muted-foreground">Identification des contacts en cours...</p>
+                    <p className="text-xs text-muted-foreground">Bellum enrichit les profils et prépare les messages...</p>
                   </CardContent>
                 </Card>
               </div>
