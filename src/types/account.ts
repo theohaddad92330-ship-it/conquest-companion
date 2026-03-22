@@ -23,6 +23,11 @@ export interface AccountAnalysis {
   api_cost_euros: number;
   created_at: string;
   updated_at: string;
+
+  // Avancement (optionnel selon migrations / versions)
+  analysis_step?: string | null;
+  analysis_progress?: number | null;
+  analysis_trace?: any;
 }
 
 export interface Contact {

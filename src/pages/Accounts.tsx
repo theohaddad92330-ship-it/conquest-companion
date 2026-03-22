@@ -18,6 +18,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { useToast } from "@/hooks/use-toast";
 import { useAccounts, useCancelAnalysis, useDeleteAccount, useArchiveAccount } from "@/hooks/useAccounts";
+import { accountCompanyName, accountScore, accountCreatedAt, accountStatusLabel } from "@/lib/domain/account-selectors";
 
 const fadeUp = { hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } };
 const PAGE_SIZE = 7;
@@ -46,10 +47,10 @@ export default function Accounts() {
   const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
   let filtered = displayAccounts.filter((a: any) => {
-    const company = (a.company_name ?? a.companyName ?? "").toLowerCase();
+    const company = accountCompanyName(a).toLowerCase();
     const sector = a.sector ?? a.sector;
-    const score = a.priority_score ?? a.priorityScore ?? 0;
-    const createdAt = a.created_at ?? a.createdAt;
+    const score = accountScore(a);
+    const createdAt = accountCreatedAt(a);
 
     if (search && !company.includes(search.toLowerCase())) return false;
     if (sectorFilter !== "all" && sector !== sectorFilter) return false;
@@ -64,10 +65,10 @@ export default function Accounts() {
   });
 
   filtered = [...filtered].sort((a: any, b: any) => {
-    const scoreA = a.priority_score ?? a.priorityScore ?? 0;
-    const scoreB = b.priority_score ?? b.priorityScore ?? 0;
-    const createdA = a.created_at ?? a.createdAt;
-    const createdB = b.created_at ?? b.createdAt;
+    const scoreA = accountScore(a);
+    const scoreB = accountScore(b);
+    const createdA = accountCreatedAt(a);
+    const createdB = accountCreatedAt(b);
 
     if (sortBy === "score") return scoreB - scoreA;
     if (sortBy === "contacts") return (b.contact_count ?? 0) - (a.contact_count ?? 0);
@@ -210,20 +211,20 @@ export default function Accounts() {
                 >
                   <TableCell className="font-medium flex items-center gap-2">
                     <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                    {account.company_name ?? account.companyName}
+                    {accountCompanyName(account)}
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm">{account.sector || "—"}</TableCell>
-                  <TableCell><PriorityBadge score={account.priority_score ?? account.priorityScore} size="sm" /></TableCell>
+                  <TableCell><PriorityBadge score={accountScore(account)} size="sm" /></TableCell>
                   <TableCell className="text-sm text-muted-foreground font-mono">{account.contact_count ?? 0}</TableCell>
                   <TableCell>
                     <Badge variant="secondary" className="text-xs">
-                      {account.status === "completed" ? "✅ Prêt" : "⏳ En cours"}
+                      {accountStatusLabel(account)}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm">
                     <div className="flex items-center gap-1.5">
                       <Calendar className="h-3 w-3" />
-                      {new Date(account.created_at ?? account.createdAt).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}
+                      {new Date(accountCreatedAt(account)).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}
                     </div>
                   </TableCell>
                   <TableCell>

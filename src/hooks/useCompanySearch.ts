@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { companySearchSchema } from '@/lib/validation';
+import { authedPostJson } from '@/lib/supabase-http';
 
 export interface CompanySuggestion {
   name: string;
@@ -33,18 +34,14 @@ export function useCompanySearch() {
 
     debounceRef.current = setTimeout(async () => {
       try {
-        const { data, error } = await supabase.functions.invoke('search-companies', {
-          body: { query: parsed.data.query },
+        const res = await authedPostJson<{ results?: CompanySuggestion[]; error?: string }>('search-companies', {
+          query: parsed.data.query,
         });
-
-        if (error) {
+        if (!res.ok) {
           setSuggestions([]);
-          const msg = (data && typeof data === 'object' && 'error' in data
-            ? (data as { error?: string }).error
-            : null) || error.message || 'Erreur lors de la recherche';
-          setSearchError(msg);
+          setSearchError(res.error);
         } else {
-          setSuggestions(data?.results || []);
+          setSuggestions(res.data?.results || []);
         }
       } catch {
         setSuggestions([]);

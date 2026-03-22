@@ -48,41 +48,46 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useAccounts } from "@/hooks/useAccounts";
+import type { Contact as DbContact } from "@/types/account";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 
 const fadeUp = { hidden: { opacity: 0, y: 15 }, visible: { opacity: 1, y: 0 } };
 const stagger = { visible: { transition: { staggerChildren: 0.08 } } };
 
-interface Contact {
-  id: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone: string;
-  company: string;
-  role: string;
-  linkedin: string;
-  source: string;
-  importedAt: string;
+function splitName(full: string): { firstName: string; lastName: string } {
+  const parts = String(full || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { firstName: "—", lastName: "" };
+  if (parts.length === 1) return { firstName: parts[0], lastName: "" };
+  return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
 }
-
-// Demo contacts to show after import
-const demoContacts: Contact[] = [
-  { id: "1", firstName: "Marie", lastName: "Dupont", email: "m.dupont@socgen.fr", phone: "+33 6 12 34 56 78", company: "Société Générale", role: "DSI", linkedin: "linkedin.com/in/mdupont", source: "CRM Export", importedAt: "2026-03-04" },
-  { id: "2", firstName: "Pierre", lastName: "Martin", email: "p.martin@airbus.com", phone: "+33 6 98 76 54 32", company: "Airbus", role: "Directeur IT", linkedin: "linkedin.com/in/pmartin", source: "CRM Export", importedAt: "2026-03-04" },
-  { id: "3", firstName: "Sophie", lastName: "Bernard", email: "s.bernard@bnp.fr", phone: "+33 6 55 44 33 22", company: "BNP Paribas", role: "Achats IT", linkedin: "linkedin.com/in/sbernard", source: "CRM Export", importedAt: "2026-03-04" },
-  { id: "4", firstName: "Thomas", lastName: "Leroy", email: "t.leroy@sncf.fr", phone: "+33 6 11 22 33 44", company: "SNCF", role: "Responsable Infra", linkedin: "linkedin.com/in/tleroy", source: "CRM Export", importedAt: "2026-03-04" },
-  { id: "5", firstName: "Claire", lastName: "Moreau", email: "c.moreau@totalenergies.com", phone: "+33 6 77 88 99 00", company: "TotalEnergies", role: "CDO", linkedin: "linkedin.com/in/cmoreau", source: "CRM Export", importedAt: "2026-03-04" },
-];
 
 export default function Contacts() {
   const { toast } = useToast();
-  const [contacts, setContacts] = useState<Contact[]>([]);
+  const { accounts } = useAccounts();
+  const accountById = Object.fromEntries((accounts || []).map((a: any) => [a.id, a]));
+  const [contacts, setContacts] = useState<DbContact[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterCompany, setFilterCompany] = useState("all");
   const [filterRole, setFilterRole] = useState("all");
   const [isDragging, setIsDragging] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ count: number; duplicates: number } | null>(null);
+
+  const { isLoading } = useQuery({
+    queryKey: ["contacts_all"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("contacts")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(5000);
+      if (error) throw error;
+      setContacts((data || []) as DbContact[]);
+      return true;
+    },
+  });
 
   const hasContacts = contacts.length > 0;
 
@@ -115,14 +120,13 @@ export default function Contacts() {
 
     setIsImporting(true);
 
-    // Simulate import processing
+    // TODO: connecter un vrai import CSV en DB (future work)
     setTimeout(() => {
-      setContacts(demoContacts);
-      setImportResult({ count: demoContacts.length, duplicates: 1 });
+      setImportResult({ count: 0, duplicates: 0 });
       setIsImporting(false);
       toast({
         title: "Import réussi ✅",
-        description: `${demoContacts.length} contacts importés, 1 doublon détecté et fusionné.`,
+        description: "Import (stub) : l'import CSV sera branché sur la base prochainement.",
       });
     }, 2000);
   };
@@ -138,15 +142,17 @@ export default function Contacts() {
   };
 
   // Filtered contacts
-  const companies = [...new Set(contacts.map((c) => c.company))];
-  const roles = [...new Set(contacts.map((c) => c.role))];
+  const companies = [...new Set(contacts.map((c) => accountById[c.account_id]?.company_name).filter(Boolean))] as string[];
+  const roles = [...new Set(contacts.map((c) => c.decision_role).filter(Boolean))] as string[];
 
   const filtered = contacts.filter((c) => {
+    const accName = accountById[c.account_id]?.company_name || "";
+    const { firstName, lastName } = splitName(c.full_name || "");
     const matchesSearch =
       !searchQuery ||
-      `${c.firstName} ${c.lastName} ${c.email} ${c.company} ${c.role}`.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCompany = filterCompany === "all" || c.company === filterCompany;
-    const matchesRole = filterRole === "all" || c.role === filterRole;
+      `${firstName} ${lastName} ${c.email ?? ""} ${accName} ${c.title ?? ""} ${c.decision_role ?? ""}`.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCompany = filterCompany === "all" || accName === filterCompany;
+    const matchesRole = filterRole === "all" || c.decision_role === filterRole;
     return matchesSearch && matchesCompany && matchesRole;
   });
 
@@ -280,7 +286,7 @@ export default function Contacts() {
         )}
 
         {/* How it works */}
-        {!hasContacts && (
+        {!hasContacts && !isLoading && (
           <motion.div variants={fadeUp}>
             <div className="grid md:grid-cols-3 gap-4 mt-2">
               {[
@@ -315,11 +321,11 @@ export default function Contacts() {
         )}
 
         {/* Contacts table */}
-        {hasContacts && (
+        {(isLoading || hasContacts) && (
           <motion.div variants={fadeUp} className="space-y-4">
             <div className="rounded-lg border border-border bg-muted/30 px-4 py-2.5 flex items-center gap-2">
               <AlertCircle className="h-4 w-4 text-muted-foreground shrink-0" />
-              <p className="text-xs text-muted-foreground">Importez votre propre fichier CSV pour compléter ou remplacer cette liste par vos contacts réels. Ils seront utilisés pour enrichir vos analyses de comptes.</p>
+              <p className="text-xs text-muted-foreground">Liste des contacts détectés dans vos analyses. L'import CSV (CRM) sera branché ensuite.</p>
             </div>
             {/* Filters bar */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
@@ -383,17 +389,26 @@ export default function Contacts() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map((contact) => (
+                  {isLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
+                        Chargement des contacts…
+                      </TableCell>
+                    </TableRow>
+                  ) : filtered.map((contact) => {
+                    const accName = accountById[contact.account_id]?.company_name || "—";
+                    const { firstName, lastName } = splitName(contact.full_name || "");
+                    return (
                     <TableRow key={contact.id} className="row-hover">
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary font-semibold text-xs">
-                            {contact.firstName[0]}{contact.lastName[0]}
+                            {(firstName?.[0] || "—")}{(lastName?.[0] || "")}
                           </div>
                           <div>
-                            <p className="text-sm font-medium">{contact.firstName} {contact.lastName}</p>
-                            {contact.linkedin && (
-                              <a href={`https://${contact.linkedin}`} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1">
+                            <p className="text-sm font-medium">{firstName} {lastName}</p>
+                            {contact.linkedin_url && (
+                              <a href={contact.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1">
                                 <Linkedin className="h-3 w-3" />
                                 Profil
                               </a>
@@ -404,29 +419,29 @@ export default function Contacts() {
                       <TableCell>
                         <div className="flex items-center gap-1.5">
                           <Building2 className="h-3.5 w-3.5 text-foreground/40" />
-                          <span className="text-sm">{contact.company}</span>
+                          <span className="text-sm">{accName}</span>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="secondary" className="text-xs font-normal">{contact.role}</Badge>
+                        <Badge variant="secondary" className="text-xs font-normal">{contact.decision_role}</Badge>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1.5 text-sm text-foreground/60">
                           <Mail className="h-3 w-3" />
-                          {contact.email}
+                          {contact.email || "—"}
                         </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1.5 text-sm text-foreground/60 font-mono text-xs">
                           <Phone className="h-3 w-3" />
-                          {contact.phone}
+                          {contact.phone || "—"}
                         </div>
                       </TableCell>
                       <TableCell>
-                        <span className="text-xs text-foreground/40">{contact.source}</span>
+                        <span className="text-xs text-foreground/40">{contact.source || "—"}</span>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    )})}
                 </TableBody>
               </Table>
             </Card>

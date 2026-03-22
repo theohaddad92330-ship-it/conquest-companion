@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { analyzeAccountSchema } from '@/lib/validation';
+import { authedPostJson } from '@/lib/supabase-http';
 
 export async function analyzeAccount(companyName: string, userContext?: string) {
   const parsed = analyzeAccountSchema.safeParse({ companyName, userContext });
@@ -7,21 +8,11 @@ export async function analyzeAccount(companyName: string, userContext?: string) 
     throw new Error(parsed.error.errors[0]?.message ?? 'Données invalides');
   }
 
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) throw new Error('Non authentifié');
-
-  const response = await supabase.functions.invoke('analyze-account', {
-    body: {
-      companyName: parsed.data.companyName,
-      userContext: parsed.data.userContext ?? undefined,
-    },
+  const res = await authedPostJson<{ accountId?: string; status?: string; error?: string }>('analyze-account', {
+    companyName: parsed.data.companyName,
+    userContext: parsed.data.userContext ?? undefined,
   });
-
-  if (response.error) {
-    const msg = (response.data && typeof response.data === 'object' && 'error' in response.data
-      ? (response.data as { error?: string }).error
-      : null) ?? response.error.message;
-    throw new Error(msg ?? 'Erreur lors de l\'analyse');
-  }
-  return response.data;
+  if (!res.ok) throw new Error(res.error);
+  if (res.data?.error) throw new Error(res.data.error);
+  return res.data;
 }

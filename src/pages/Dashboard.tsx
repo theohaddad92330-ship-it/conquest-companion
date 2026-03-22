@@ -44,6 +44,7 @@ import {
   getQueueEmptyTip,
   getJarvisBonusTip,
 } from "@/lib/personalized-copy";
+import { accountCompanyName, accountScore, accountCreatedAt, accountContactCount, accountMessageCount } from "@/lib/domain/account-selectors";
 
 const fadeUp = { hidden: { opacity: 0, y: 15 }, visible: { opacity: 1, y: 0 } };
 const stagger = { visible: { transition: { staggerChildren: 0.08 } } };
@@ -60,7 +61,7 @@ export default function Dashboard() {
 
   const sortedAccounts = useMemo(() => {
     return [...safeAccounts].sort(
-      (a: any, b: any) => new Date(b.created_at ?? b.createdAt).getTime() - new Date(a.created_at ?? a.createdAt).getTime()
+      (a: any, b: any) => new Date(accountCreatedAt(b)).getTime() - new Date(accountCreatedAt(a)).getTime()
     );
   }, [safeAccounts]);
 
@@ -71,25 +72,7 @@ export default function Dashboard() {
   const userGeo = Array.isArray(onboarding.geo) ? onboarding.geo.slice(0, 6) : [];
   const userSize = safeString(onboarding.size);
 
-  function accountContactsCount(a: any) {
-    if (typeof (a as any).contact_count === "number") return (a as any).contact_count;
-    const rawContacts = a?.raw_analysis?.contacts;
-    if (Array.isArray(rawContacts)) return rawContacts.length;
-    return 0;
-  }
-
-  function accountMessagesCount(a: any) {
-    const rawContacts = a?.raw_analysis?.contacts;
-    if (!Array.isArray(rawContacts)) return 0;
-    return rawContacts.reduce((sum: number, c: any) => {
-      return (
-        sum +
-        (c?.emailMessage ? 1 : 0) +
-        (c?.linkedinMessage ? 1 : 0) +
-        (c?.followupMessage ? 1 : 0)
-      );
-    }, 0);
-  }
+  // Stats: centralisées dans src/lib/domain/account-selectors.ts
 
   function accountSignalsCount(a: any) {
     const rs = a?.recent_signals;
@@ -127,8 +110,8 @@ export default function Dashboard() {
     const items: { accountId: string; company: string; score: number; signal: string }[] = [];
     for (const a of sortedAccounts) {
       const signals = Array.isArray(a.recent_signals) ? a.recent_signals : [];
-      const score = Number(a.priority_score ?? a.priorityScore ?? 0) || 0;
-      const company = a.company_name ?? a.companyName ?? "Compte";
+      const score = accountScore(a);
+      const company = accountCompanyName(a);
       for (const s of signals.slice(0, 6)) {
         const txt = typeof s === "string" ? s : JSON.stringify(s);
         if (!txt) continue;
@@ -161,14 +144,14 @@ export default function Dashboard() {
   const cockpit = useMemo(() => {
     const inScope = sortedAccounts.filter(inPerimeter);
     const completed = inScope.filter((a: any) => a.status === "completed");
-    const withContacts = completed.filter((a: any) => accountContactsCount(a) > 0);
-    const withMessages = completed.filter((a: any) => accountMessagesCount(a) > 0);
+    const withContacts = completed.filter((a: any) => accountContactCount(a) > 0);
+    const withMessages = completed.filter((a: any) => accountMessageCount(a) > 0);
 
     const actionQueue = completed
       .map((a: any) => {
-        const score = Number(a.priority_score ?? a.priorityScore ?? 0) || 0;
-        const contacts = accountContactsCount(a);
-        const messages = accountMessagesCount(a);
+        const score = accountScore(a);
+        const contacts = accountContactCount(a);
+        const messages = accountMessageCount(a);
         const signals = accountSignalsCount(a);
         let next = "Ouvrir la fiche";
         let why = "Revoir le plan et prioriser vos angles.";
@@ -188,7 +171,7 @@ export default function Dashboard() {
         }
         return {
           id: a.id,
-          company: a.company_name ?? a.companyName ?? "Compte",
+          company: accountCompanyName(a),
           sector: a.sector || "—",
           score,
           contacts,
@@ -197,7 +180,7 @@ export default function Dashboard() {
           level,
           next,
           why,
-          createdAt: a.created_at ?? a.createdAt,
+          createdAt: accountCreatedAt(a),
         };
       })
       .sort((a: any, b: any) => (b.score - a.score) || (b.signals - a.signals) || (b.contacts - a.contacts))
@@ -391,7 +374,7 @@ export default function Dashboard() {
                       <div className="mt-2 space-y-2">
                         {nextActions.analyzing.map((a: any) => (
                           <button key={a.id} className="w-full text-left text-sm hover:underline" onClick={() => navigate(`/accounts/${a.id}`)}>
-                            {a.company_name ?? a.companyName} <span className="text-xs text-muted-foreground">— analyse en cours</span>
+                            {accountCompanyName(a)} <span className="text-xs text-muted-foreground">— analyse en cours</span>
                           </button>
                         ))}
                       </div>
@@ -407,7 +390,7 @@ export default function Dashboard() {
                         {nextActions.errored.map((a: any) => (
                           <div key={a.id} className="flex items-center justify-between gap-3">
                             <button className="text-left text-sm hover:underline" onClick={() => navigate(`/accounts/${a.id}`)}>
-                              {a.company_name ?? a.companyName}
+                              {accountCompanyName(a)}
                             </button>
                             <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => navigate(`/accounts/${a.id}`)}>
                               <RefreshCw className="h-3.5 w-3.5 mr-1" />
@@ -428,9 +411,9 @@ export default function Dashboard() {
                         {nextActions.topPriority.map((a: any) => (
                           <div key={a.id} className="flex items-center justify-between gap-3">
                             <button className="text-left text-sm hover:underline" onClick={() => navigate(`/accounts/${a.id}`)}>
-                              {a.company_name ?? a.companyName}
+                              {accountCompanyName(a)}
                             </button>
-                            <PriorityBadge score={a.priority_score ?? a.priorityScore ?? 0} size="sm" />
+                            <PriorityBadge score={accountScore(a)} size="sm" />
                           </div>
                         ))}
                       </div>

@@ -3,9 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { AnalysisState, AccountAnalysis, Contact, AttackAngle, ActionPlan } from '@/types/account';
 import { useQueryClient } from '@tanstack/react-query';
 import { analyzeAccountSchema } from '@/lib/validation';
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+import { authedPostJson } from '@/lib/supabase-http';
 
 const STORAGE_KEY_ACCOUNT_ID = 'bellum_analysis_account_id';
 const STORAGE_KEY_QUERY = 'bellum_analysis_query';
@@ -17,38 +15,22 @@ function clearPersistedAnalysis() {
   } catch {}
 }
 
-/** Appel direct à l'Edge Function pour avoir la réponse réelle (status + body) et afficher le vrai message d'erreur. */
+/** Edge Function analyze-account — wrapper stable (évite divergences fetch/invoke). */
 async function invokeAnalyzeAccount(companyName: string, userContext?: string): Promise<{ accountId?: string; error?: string }> {
-  await supabase.auth.refreshSession();
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.access_token) {
-    return { error: 'Session expirée. Veuillez vous reconnecter.' };
-  }
-  const url = `${SUPABASE_URL}/functions/v1/analyze-account`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'apikey': SUPABASE_ANON_KEY,
-      'Authorization': `Bearer ${session.access_token}`,
-    },
-    body: JSON.stringify({ companyName, userContext: userContext ?? undefined }),
+  const res = await authedPostJson<{ accountId?: string; error?: string }>("analyze-account", {
+    companyName,
+    userContext: userContext ?? undefined,
   });
-  const text = await res.text();
-  let body: { accountId?: string; status?: string; error?: string } = {};
-  try {
-    body = JSON.parse(text);
-  } catch {
-    if (!res.ok) return { error: text.slice(0, 300) || `Erreur ${res.status} ${res.statusText}` };
-    return { error: 'Réponse serveur invalide' };
-  }
-  if (!res.ok) return { error: body.error || text.slice(0, 300) || `Erreur ${res.status}` };
-  return { accountId: body.accountId, error: body.error };
+  if (!res.ok) return { error: res.error };
+  if (res.data?.error) return { error: res.data.error };
+  if (!res.data?.accountId) return { error: "Réponse serveur invalide (pas d’accountId)" };
+  return { accountId: res.data.accountId };
 }
 
 export function useAnalysisPolling() {
   const queryClient = useQueryClient();
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollErrorCountRef = useRef(0);
   
   const [state, setState] = useState<AnalysisState>({
     status: 'idle',
@@ -71,6 +53,7 @@ export function useAnalysisPolling() {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
+    pollErrorCountRef.current = 0;
   }, []);
 
   const resetState = useCallback(() => {
@@ -157,13 +140,30 @@ export function useAnalysisPolling() {
       // Polling toutes les 2 secondes
       intervalRef.current = setInterval(async () => {
         try {
-          const { data: account } = await supabase
+          const { data: account, error: accountErr } = await supabase
             .from('accounts')
             .select('*')
             .eq('id', accountId)
             .single();
 
-          if (!account) return;
+          if (accountErr || !account) {
+            pollErrorCountRef.current += 1;
+            // Après quelques tentatives, on affiche une erreur claire au lieu de “charger dans le vide”.
+            if (pollErrorCountRef.current >= 3) {
+              stopPolling();
+              clearPersistedAnalysis();
+              setState(prev => ({
+                ...prev,
+                status: 'error',
+                error:
+                  accountErr?.message
+                    ? `Impossible de lire l’analyse (permissions/connexion) : ${accountErr.message}`
+                    : "Analyse introuvable (le compte n’a pas été créé ou n’est pas accessible).",
+              }));
+            }
+            return;
+          }
+          pollErrorCountRef.current = 0;
 
           // Erreur
           if (account.status === 'error') {
@@ -199,17 +199,43 @@ export function useAnalysisPolling() {
           let progress = 15;
           let currentStep = 'Bellum analyse le périmètre et les signaux...';
 
-          if (account.sector) {
-            progress = 30;
-            currentStep = 'Fiche compte prête — identification des décideurs et portes d\'entrée...';
+          // Source de vérité si disponible (backend écrit analysis_step/progress)
+          const step = (account as any).analysis_step as string | null | undefined;
+          const stepProgress = (account as any).analysis_progress as number | null | undefined;
+          if (typeof stepProgress === 'number' && Number.isFinite(stepProgress)) {
+            progress = Math.max(0, Math.min(100, Math.round(stepProgress)));
           }
-          if (contacts && contacts.length > 0) {
-            progress = 60;
-            currentStep = 'Contacts identifiés — enrichissement des profils et préparation des messages...';
+          if (step) {
+            const map: Record<string, string> = {
+              queued: "Lancement de l'analyse…",
+              phase1_research: 'Recherche web & signaux en cours…',
+              phase1_saving: 'Construction de la fiche compte…',
+              phase2_contacts_source: 'Recherche de contacts (LinkedIn / web)…',
+              phase3_enrich_contacts: 'Structuration des contacts (sans messages)…',
+              phase3_saving_contacts: 'Sauvegarde des contacts…',
+              phase4_plan: "Génération du plan d'action…",
+              messages_generating: 'Génération des messages (à la demande)…',
+              completed: 'Analyse terminée !',
+              timeout: "Temps maximum atteint — arrêt de l'analyse…",
+              error: "Erreur pendant l'analyse…",
+            };
+            currentStep = map[step] || currentStep;
           }
-          if (angles && angles.length > 0) {
-            progress = 80;
-            currentStep = 'Plan d\'attaque prêt — finalisation des messages personnalisés...';
+
+          // Fallback heuristique si analysis_step/progress non présents
+          if (!step) {
+            if (account.sector) {
+              progress = 30;
+              currentStep = "Fiche compte prête — identification des décideurs et portes d'entrée...";
+            }
+            if (contacts && contacts.length > 0) {
+              progress = 60;
+              currentStep = 'Contacts identifiés — structuration en cours...';
+            }
+            if (angles && angles.length > 0) {
+              progress = 80;
+              currentStep = "Plan d'attaque prêt — finalisation...";
+            }
           }
           let correctedName: string | null = null;
           let notFound = false;
@@ -247,7 +273,17 @@ export function useAnalysisPolling() {
           }));
         } catch (err) {
           // Erreur de polling, on continue
+          pollErrorCountRef.current += 1;
           console.error('Polling error:', err);
+          if (pollErrorCountRef.current >= 3) {
+            stopPolling();
+            clearPersistedAnalysis();
+            setState(prev => ({
+              ...prev,
+              status: 'error',
+              error: err instanceof Error ? err.message : 'Erreur de suivi de l’analyse',
+            }));
+          }
         }
       }, 2000);
 

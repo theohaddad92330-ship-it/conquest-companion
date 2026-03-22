@@ -8,11 +8,11 @@ const fadeUp = { hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } };
 
 const faq = [
   { q: "Comment lancer une analyse ?", a: "Tapez le nom d'une entreprise dans la barre de recherche depuis le Dashboard ou la page Nouvelle recherche, puis cliquez sur Analyser." },
-  { q: "Combien de temps dure une analyse ?", a: "Une analyse complète prend entre 1 et 3 minutes selon la taille de l'entreprise. Les résultats s'affichent progressivement au fur et à mesure." },
+  { q: "Combien de temps dure une analyse ?", a: "La fiche compte s’affiche rapidement. La génération des messages est désormais à la demande (onglet Messages) pour éviter les attentes longues et rendre le flux plus fiable." },
   { q: "Comment fonctionnent les crédits ?", a: "Chaque analyse d'un nouveau compte consomme 1 crédit. Relancer une analyse existante consomme également 1 crédit. Les crédits se renouvellent chaque mois." },
   { q: "Puis-je exporter mes résultats ?", a: "Oui, chaque fiche compte peut être exportée en CSV ou directement dans Google Sheets depuis la page de détail du compte." },
   { q: "Comment personnaliser les résultats ?", a: "Complétez votre profil ESN dans les paramètres (offres, secteurs cibles, bench, références). Plus il est complet, plus les angles d'attaque et messages seront pertinents." },
-  { q: "Les contacts sont-ils vérifiés ?", a: "Les emails sont vérifiés via notre système d'enrichissement. Un badge vert ✅ indique un email confirmé." },
+  { q: "Les contacts sont-ils vérifiés ?", a: "Les contacts LinkedIn proviennent d’Apify. Les emails/numéros peuvent être absents selon les sources. Un badge “✅ vérifié” s’affiche uniquement si l’email a été vérifié." },
   { q: "Puis-je ajuster une analyse ?", a: "Oui, en bas de chaque fiche compte, utilisez la zone 'Ajuster la recherche' pour affiner les résultats (exclure une filiale, insister sur un angle, etc.)." },
   { q: "Comment changer de plan ?", a: "Rendez-vous dans Crédits & plan depuis la sidebar pour voir votre plan actuel et les options d'upgrade." },
   { q: "Mes données sont-elles sécurisées ?", a: "Absolument. Vos données sont chiffrées et isolées. Aucun partage entre utilisateurs. Conformité RGPD." },

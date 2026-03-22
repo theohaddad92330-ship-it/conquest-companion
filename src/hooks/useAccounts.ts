@@ -31,7 +31,7 @@ export function useAccounts(options?: { includeArchived?: boolean }) {
         .select('*')
         .order('created_at', { ascending: false });
       if (error) throw error;
-      let list = (data || []) as (AccountAnalysis & { contact_count?: number; archived_at?: string | null })[];
+      let list = (data || []) as (AccountAnalysis & { contact_count?: number; message_count?: number; archived_at?: string | null })[];
       if (!includeArchived) {
         list = list.filter((a) => a.archived_at == null);
       }
@@ -39,14 +39,28 @@ export function useAccounts(options?: { includeArchived?: boolean }) {
       const accountIds = list.map((a) => a.id);
       const { data: contactRows } = await supabase
         .from('contacts')
-        .select('account_id')
+        // On ne récupère que le strict nécessaire pour calculer
+        // - contact_count
+        // - message_count (messages générés à la demande)
+        .select('account_id,email_message,linkedin_message,followup_message')
         .in('account_id', accountIds);
       const countByAccount: Record<string, number> = {};
+      const messagesByAccount: Record<string, number> = {};
       for (const row of contactRows || []) {
-        const id = (row as { account_id: string }).account_id;
+        const r = row as { account_id: string; email_message?: any; linkedin_message?: string | null; followup_message?: any };
+        const id = r.account_id;
         countByAccount[id] = (countByAccount[id] || 0) + 1;
+        const msgCount =
+          (r.email_message?.body ? 1 : 0) +
+          (r.linkedin_message ? 1 : 0) +
+          (r.followup_message?.body ? 1 : 0);
+        if (msgCount > 0) messagesByAccount[id] = (messagesByAccount[id] || 0) + msgCount;
       }
-      return list.map((a) => ({ ...a, contact_count: countByAccount[a.id] ?? 0 }));
+      return list.map((a) => ({
+        ...a,
+        contact_count: countByAccount[a.id] ?? 0,
+        message_count: messagesByAccount[a.id] ?? 0,
+      }));
     },
     enabled: !!user,
   });

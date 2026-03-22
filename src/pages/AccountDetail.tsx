@@ -26,6 +26,8 @@ import { generateCSV, downloadCSV } from "@/lib/export-csv";
 import { safeString, cn } from "@/lib/utils";
 import { FranceSitesMap } from "@/components/FranceSitesMap";
 import { getScoringIntro, getOuvrirCompteTip } from "@/lib/personalized-copy";
+import { supabase } from "@/integrations/supabase/client";
+import { authedPostJson } from "@/lib/supabase-http";
 
 const fadeUp = { hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } };
 
@@ -1173,8 +1175,17 @@ function TabPlan({ angles, actionPlan }: { angles: AttackAngle[]; actionPlan: Ac
   );
 }
 
-function TabMessages({ contacts }: { contacts: Contact[] }) {
+async function invokeGenerateMessages(accountId: string, limit = 20): Promise<{ updated?: number; error?: string }> {
+  const res = await authedPostJson<{ updated?: number; error?: string }>("generate-messages", { accountId, limit });
+  if (!res.ok) return { error: res.error };
+  if (res.data?.error) return { error: res.data.error };
+  return { updated: res.data?.updated ?? 0 };
+}
+
+function TabMessages({ contacts, accountId }: { contacts: Contact[]; accountId: string }) {
   const [filter, setFilter] = useState<string>("all");
+  const { toast } = useToast();
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const messageGroups = useMemo(() => {
     return contacts.map((c) => {
@@ -1212,6 +1223,38 @@ function TabMessages({ contacts }: { contacts: Contact[] }) {
           </Button>
         ))}
       </div>
+
+      {messageGroups.length === 0 && (
+        <Card className="border-border card-neutral rounded-xl">
+          <CardContent className="p-6 space-y-3">
+            <p className="text-sm font-medium">Aucun message généré pour l’instant</p>
+            <p className="text-xs text-muted-foreground">
+              Pour réduire le temps d’attente pendant la recherche, Bellum génère maintenant les messages <strong>à la demande</strong>.
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                disabled={isGenerating}
+                onClick={async () => {
+                  setIsGenerating(true);
+                  try {
+                    const res = await invokeGenerateMessages(accountId, 20);
+                    if (res.error) throw new Error(res.error);
+                    toast({ title: "Génération lancée", description: `${res.updated ?? 0} contact(s) mis à jour.` });
+                  } catch (e) {
+                    toast({ title: "Erreur", description: e instanceof Error ? e.message : "Impossible de générer les messages.", variant: "destructive" });
+                  } finally {
+                    setIsGenerating(false);
+                  }
+                }}
+              >
+                {isGenerating ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Génération…</> : "Générer messages (Top 20)"}
+              </Button>
+              <span className="text-xs text-muted-foreground">~1–2 min</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {messageGroups.map((g) => {
         const filteredMsgs = filter === "all" ? g.messages : g.messages.filter((m) => m.type === filter);
@@ -1257,7 +1300,6 @@ function TabMessages({ contacts }: { contacts: Contact[] }) {
           </div>
         );
       })}
-      {messageGroups.length === 0 && <p className="text-sm text-muted-foreground">—</p>}
     </div>
   );
 }
@@ -1456,7 +1498,7 @@ export default function AccountDetail() {
         <TabsContent value="offres" className="mt-6"><TabOffresConstruire raw={account.raw_analysis} /></TabsContent>
         <TabsContent value="plan-hebdo" className="mt-6"><TabPlanHebdo raw={account.raw_analysis} /></TabsContent>
         <TabsContent value="evaluation" className="mt-6"><TabEvaluation raw={account.raw_analysis} account={account} onboardingData={profile?.onboarding_data} firstName={profile?.full_name?.split(" ")[0]} /></TabsContent>
-        <TabsContent value="messages" className="mt-6"><TabMessages contacts={contacts as Contact[]} /></TabsContent>
+        <TabsContent value="messages" className="mt-6"><TabMessages contacts={contacts as Contact[]} accountId={account.id} /></TabsContent>
       </Tabs>
       </div>
 

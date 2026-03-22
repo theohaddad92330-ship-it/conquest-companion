@@ -18,6 +18,27 @@ function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: cors() })
 }
 
+// AbortSignal.timeout peut ne pas être disponible de manière uniforme selon l'edge runtime.
+// Ce helper fournit un fallback fiable (AbortController) pour éviter les appels qui "moulinent".
+function timeoutSignal(ms: number): AbortSignal {
+  const anyAbortSignal = AbortSignal as any
+  if (anyAbortSignal && typeof anyAbortSignal.timeout === 'function') {
+    return anyAbortSignal.timeout(ms) as AbortSignal
+  }
+  const controller = new AbortController()
+  setTimeout(() => controller.abort(), ms)
+  return controller.signal
+}
+
+async function setAnalysisStep(supabase: any, accountId: string, step: string, progress: number, traceId: string, extra?: Record<string, unknown>) {
+  const analysis_trace = { ...(extra ? extra : {}), traceId, at: new Date().toISOString() }
+  await supabase
+    .from('accounts')
+    .update({ analysis_step: step, analysis_progress: Math.max(0, Math.min(100, Math.round(progress))), analysis_trace })
+    .eq('id', accountId)
+    .catch(() => {})
+}
+
 // ── Serve ──────────────────────────────────────────────────
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: cors() })
@@ -42,6 +63,8 @@ serve(async (req) => {
 
     // Créer le compte
     const { data: account, error: insertErr } = await supabase
+      // Ne pas insérer analysis_* ici : si la migration n’est pas appliquée, l’INSERT échoue (“Impossible de créer le compte”).
+      // Les étapes sont mises à jour via setAnalysisStep après coup (no-op si colonnes absentes).
       .from('accounts').insert({ user_id: user.id, company_name: companyName, status: 'analyzing', user_context: userContext }).select().single()
     if (insertErr || !account) {
       console.error(JSON.stringify({ event: 'insert_error', traceId, error: insertErr?.message }))
@@ -66,6 +89,7 @@ serve(async (req) => {
           ])
         } catch (e) {
           if (e instanceof Error && e.message === 'TIMEOUT_8MIN') {
+            await setAnalysisStep(supabase, account.id, 'timeout', 100, traceId, { reason: 'TIMEOUT_8MIN' })
             await supabase
               .from('accounts')
               .update({
@@ -118,21 +142,44 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
   console.log(JSON.stringify({ event: 'analysis_start', traceId, accountId, companyName }))
 
   try {
+    // Crédit: consommer 1 analyse (transactionnel). Si limite atteinte -> erreur immédiate.
+    try {
+      const { data: ok } = await supabase.rpc('check_and_increment_accounts_used', { p_user_id: userId })
+      if (ok === false) {
+        await setAnalysisStep(supabase, accountId, 'error', 100, traceId, { reason: 'CREDITS_EXHAUSTED' })
+        await supabase
+          .from('accounts')
+          .update({ status: 'error', error_message: "Crédits insuffisants pour lancer une nouvelle analyse. Rendez-vous dans Crédits & plan." })
+          .eq('id', accountId)
+          .catch(() => {})
+        return
+      }
+    } catch (e) {
+      // Si la RPC n'est pas disponible, on n'empêche pas l'analyse (mode dégradé)
+      console.log(JSON.stringify({ event: 'credits_rpc_skip', traceId, error: e instanceof Error ? e.message : 'unknown' }))
+    }
+
+    await setAnalysisStep(supabase, accountId, 'phase1_research', 10, traceId)
     // ════════════════════════════════════════
     // PHASE 1 — DEEP RESEARCH
     // ════════════════════════════════════════
     const braveResults = await searchBrave(companyName, onboardingData, traceId)
+    await setAnalysisStep(supabase, accountId, 'phase1_brave_done', 12, traceId, { braveUrls: braveResults.urls?.length ?? 0 })
     const scrapedContent = await scrapePages(braveResults.urls, traceId)
+    await setAnalysisStep(supabase, accountId, 'phase1_scrape_done', 15, traceId, { scrapedChars: scrapedContent?.length ?? 0 })
     console.log(JSON.stringify({ event: 'phase1_data_collected', traceId, braveCount: braveResults.results.length, scrapedLength: scrapedContent.length }))
 
     const research = await callClaude_Research(companyName, braveResults, scrapedContent, userContext, onboardingData, traceId)
     if (!research) {
+      await setAnalysisStep(supabase, accountId, 'phase1_error', 100, traceId)
       await supabase.from('accounts').update({ status: 'error', error_message: 'L\'analyse IA a échoué. Réessayez.' }).eq('id', accountId)
       return
     }
+    await setAnalysisStep(supabase, accountId, 'phase1_claude_done', 18, traceId, { sector: research.sector ?? null, anglesCount: research.angles?.length ?? 0 })
     console.log(JSON.stringify({ event: 'phase1_claude_done', traceId, sector: research.sector, anglesCount: research.angles?.length || 0 }))
 
     // Sauvegarder Phase 1
+    await setAnalysisStep(supabase, accountId, 'phase1_saving', 20, traceId)
     await supabase.from('accounts').update({
       sector: research.sector,
       employees: research.employees,
@@ -162,6 +209,7 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
     // ════════════════════════════════════════
     // PHASE 2 — LINKEDIN SCRAPING (Apify) + fallback si échec ou 0 résultat
     // ════════════════════════════════════════
+    await setAnalysisStep(supabase, accountId, 'phase2_contacts_source', 30, traceId)
     let rawContacts: any[] = []
     let apifyWorked = false
 
@@ -218,6 +266,7 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
     // ════════════════════════════════════════
     // PHASE 3 — ENRICHISSEMENT CONTACTS
     // ════════════════════════════════════════
+    await setAnalysisStep(supabase, accountId, 'phase3_enrich_contacts', 45, traceId, { rawContactsCount: rawContacts.length })
     console.log(JSON.stringify({ event: 'phase3_start', traceId, rawContactsCount: rawContacts.length, apifyWorked, fromWebMentioned }))
     const enrichResult = await callClaude_Contacts(companyName, rawContacts, research, onboardingData, apifyWorked, fromWebMentioned, traceId)
     const enrichedContacts = enrichResult.contacts
@@ -248,6 +297,7 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
     }
 
     // Sauvegarder les contacts
+    await setAnalysisStep(supabase, accountId, 'phase3_saving_contacts', 60, traceId, { enrichedCount: enrichedContacts.length })
     if (enrichedContacts.length > 0) {
       const rows = enrichedContacts.map((c: any, i: number) => ({
         account_id: accountId, user_id: userId,
@@ -260,9 +310,9 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
         linkedin_url: c.linkedinUrl || c.linkedin ? String(c.linkedinUrl || c.linkedin).slice(0, 500) : null,
         profile_summary: c.summary ? String(c.summary).slice(0, 2000) : null,
         why_contact: c.whyContact ? String(c.whyContact).slice(0, 1000) : null,
-        email_message: normMessage(c.emailMessage),
-        linkedin_message: normLinkedinMessage(c.linkedinMessage),
-        followup_message: normMessage(c.followupMessage),
+        email_message: null,
+        linkedin_message: null,
+        followup_message: null,
         source: apifyWorked ? 'linkedin_apify' : (fromWebMentioned ? 'web_mentioned' : 'ai_generated'),
       }))
       const { error: insertErr } = await supabase.from('contacts').insert(rows)
@@ -284,6 +334,7 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
     // ════════════════════════════════════════
     // PHASE 4 — PLAN D'ACTION FINAL
     // ════════════════════════════════════════
+    await setAnalysisStep(supabase, accountId, 'phase4_plan', 75, traceId)
     const plan = await callClaude_Plan(companyName, research, enrichedContacts, onboardingData, traceId)
     console.log(JSON.stringify({ event: 'phase4_done', traceId, hasPlan: !!plan }))
 
@@ -311,12 +362,14 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
     }
 
     // ── TERMINÉ ──
+    await setAnalysisStep(supabase, accountId, 'completed', 100, traceId)
     await supabase.from('accounts').update({ status: 'completed' }).eq('id', accountId)
     console.log(JSON.stringify({ event: 'analysis_complete', traceId, accountId, totalSeconds: Math.round((Date.now() - t0) / 1000) }))
 
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Erreur inconnue'
     console.error(JSON.stringify({ event: 'analysis_error', traceId, accountId, error: msg }))
+    await setAnalysisStep(supabase, accountId, 'error', 100, traceId, { error: msg.slice(0, 200) })
     await supabase.from('accounts').update({ status: 'error', error_message: msg.slice(0, 500) }).eq('id', accountId).catch(() => {})
   }
 }
@@ -360,7 +413,7 @@ async function searchBrave(companyName: string, onboardingData: any, traceId: st
     const all = await Promise.allSettled(queries.map(q =>
       fetch(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=15`, {
         headers: { 'X-Subscription-Token': BRAVE_API_KEY },
-        signal: AbortSignal.timeout(10000),
+        signal: timeoutSignal(10000),
       }).then(r => r.json()).then(d => d.web?.results || [])
     ))
     const flat = all.flatMap(r => r.status === 'fulfilled' ? r.value : [])
@@ -397,7 +450,7 @@ async function scrapePages(urls: string[], traceId: string): Promise<string> {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${FIRECRAWL_API_KEY}` },
         body: JSON.stringify({ url, formats: ['markdown'], onlyMainContent: true }),
-        signal: AbortSignal.timeout(15000),
+        signal: timeoutSignal(15000),
       }).then(r => r.json()).then(d => d.data?.markdown ? `--- SOURCE: ${url} ---\n${d.data.markdown.slice(0, CHARS_PER_PAGE)}` : null)
     ))
     const contents = all.filter(r => r.status === 'fulfilled' && r.value).map(r => (r as any).value)
@@ -559,17 +612,9 @@ RÈGLES CONTACTS :
 - Objectif : entre ${TARGET_MIN_CONTACTS} et ${TARGET_IDEAL_CONTACTS} contacts par compte. C'est la force du produit : TOUTES les entités, TOUS les profils utiles (décideurs ET opérationnels) sur les sujets que l'utilisateur attaque (data, cyber, IT, agile, scrum, dev, digital). PAS QUE DES C-LEVEL : sponsors, champions (directeurs, heads), operational (chefs de projet, tech leads), purchasing (achats IT), influencer (RSSI, experts). Majorité champions + operational + achats.
 ${geoOnlyFranceEU ? '- GÉO : privilégier contacts France / Europe uniquement.' : ''}
 
-MESSAGES — CRÉER DE L'ATTENTION (décideurs B2B sursollicités) :
-- Ton et format DIFFÉRENTS selon le niveau hiérarchique et le rôle :
-  • C-level / sponsor : très court, 1 idée forte, pas de pavé. Objet email percutant (chiffre, résultat, question ouverte). Pas "Je vous contacte pour...".
-  • Champion / directeur : contexte métier + 1 pain concret du compte + proposition courte. Objet = bénéfice ou question.
-  • Opérationnel / achats : plus détaillé, concret, preuve (ex. cas client, techno). Objet clair et actionnable.
-- LinkedIn : max 300 car. Accroche personnalisée (poste, entité, ou actualité du compte). Pas de template générique.
-- Email : objet max 60 car (chiffre, question, ou résultat). Corps max 150 mots. Une seule demande claire. Signature courte.
-- Relance : sujet RE: + nouveau angle (pas répéter le 1er message). Max 80 mots.
-- Aucun message ne doit ressembler à un envoi en masse. Chaque message doit donner l'impression d'avoir été écrit pour CE contact sur CE compte.
+IMPORTANT : ne génère PAS les messages (email/LinkedIn/relance) ici. On les générera à la demande côté interface pour éviter les timeouts et réduire l'attente.
 
-Réponds UNIQUEMENT en JSON valide : {"contacts": [{ "name", "title", "entity", "location", "role", "priority", "summary", "whyContact", "linkedinUrl", "email", "linkedinMessage", "emailMessage", "followupMessage" }], "organigramme": [], "decisionChain": [], "uncoveredZones": []}.`
+Réponds UNIQUEMENT en JSON valide : {"contacts": [{ "name", "title", "entity", "location", "role", "priority", "summary", "whyContact", "linkedinUrl", "email" }], "organigramme": [], "decisionChain": [], "uncoveredZones": []}.`
 
   let userPrompt: string
   if (apifyWorked && rawContacts.length > 0) {
@@ -582,7 +627,7 @@ Réponds UNIQUEMENT en JSON valide : {"contacts": [{ "name", "title", "entity", 
       about: String(c.about || '').slice(0, 200),
       location: c.location?.linkedinText || c.location?.parsed?.city || '',
     }))
-    userPrompt = `Enrichis ces ${simplified.length} contacts LinkedIn pour "${companyName}". Pour CHAQUE contact : name, title, entity, location, role, priority, summary, whyContact, linkedinUrl, email, linkedinMessage, emailMessage, followupMessage. Si la liste fournie est inférieure à ${TARGET_MIN_CONTACTS}, complète avec des profils types (même entités, sujets data/cyber/agile/dev) pour atteindre entre ${TARGET_MIN_CONTACTS} et ${TARGET_IDEAL_CONTACTS} contacts. Retourne un JSON avec "contacts", "organigramme", "decisionChain", "uncoveredZones".
+    userPrompt = `Enrichis ces ${simplified.length} contacts LinkedIn pour "${companyName}". Pour CHAQUE contact : name, title, entity, location, role, priority, summary, whyContact, linkedinUrl, email. Si la liste fournie est inférieure à ${TARGET_MIN_CONTACTS}, complète avec des profils types (même entités, sujets data/cyber/agile/dev) pour atteindre entre ${TARGET_MIN_CONTACTS} et ${TARGET_IDEAL_CONTACTS} contacts. Retourne un JSON avec "contacts", "organigramme", "decisionChain", "uncoveredZones".
 
 ${JSON.stringify(simplified, null, 2)}`
   } else if (fromWebMentioned && rawContacts.length > 0) {
@@ -590,12 +635,12 @@ ${JSON.stringify(simplified, null, 2)}`
     const needCompletion = limited.length < TARGET_MIN_CONTACTS
     const targetTotal = needCompletion ? TARGET_IDEAL_CONTACTS : Math.min(limited.length + 50, TARGET_IDEAL_CONTACTS)
     if (needCompletion) {
-      userPrompt = `Voici des personnes RÉELLES extraites du web pour "${companyName}" (${limited.length} noms). CONSERVE leurs noms et postes. Enrichis CHAQUE fiche : entity, role, priority, summary, whyContact, linkedinMessage, emailMessage, followupMessage. Puis complète avec des profils types (noms fictifs, postes réalistes, TOUS NIVEAUX — data, cyber, IT, agile, scrum, dev, digital) pour atteindre entre ${TARGET_MIN_CONTACTS} et ${TARGET_IDEAL_CONTACTS} contacts. Pour les compléments : summary "Profil type suggéré (non sourcé web)".
+      userPrompt = `Voici des personnes RÉELLES extraites du web pour "${companyName}" (${limited.length} noms). CONSERVE leurs noms et postes. Enrichis CHAQUE fiche : entity, role, priority, summary, whyContact, linkedinUrl, email. Puis complète avec des profils types (noms fictifs, postes réalistes, TOUS NIVEAUX — data, cyber, IT, agile, scrum, dev, digital) pour atteindre entre ${TARGET_MIN_CONTACTS} et ${TARGET_IDEAL_CONTACTS} contacts. Pour les compléments : summary "Profil type suggéré (non sourcé web)".
 Retourne le même format JSON : {"contacts": [...], "organigramme": [], "decisionChain": [], "uncoveredZones": []}.
 
 ${JSON.stringify(limited, null, 2)}`
     } else {
-      userPrompt = `Voici des personnes RÉELLES extraites du web pour "${companyName}" (${limited.length} noms). CONSERVE leurs noms et postes exacts. Enrichis CHAQUE contact : entity (filiale/BU), role, priority, summary, whyContact, linkedinMessage, emailMessage, followupMessage. Si tu peux en suggérer d'autres (même entités, sujets data/cyber/agile/dev) pour atteindre jusqu'à ${TARGET_IDEAL_CONTACTS}, ajoute-les avec summary "Profil type suggéré". Sinon enrichis uniquement cette liste.
+      userPrompt = `Voici des personnes RÉELLES extraites du web pour "${companyName}" (${limited.length} noms). CONSERVE leurs noms et postes exacts. Enrichis CHAQUE contact : entity (filiale/BU), role, priority, summary, whyContact, linkedinUrl, email. Si tu peux en suggérer d'autres (même entités, sujets data/cyber/agile/dev) pour atteindre jusqu'à ${TARGET_IDEAL_CONTACTS}, ajoute-les avec summary "Profil type suggéré". Sinon enrichis uniquement cette liste.
 Retourne le même format JSON : {"contacts": [...], "organigramme": [], "decisionChain": [], "uncoveredZones": []}.
 
 ${JSON.stringify(limited, null, 2)}`
@@ -603,7 +648,7 @@ ${JSON.stringify(limited, null, 2)}`
   } else {
     userPrompt = `Génère entre ${TARGET_MIN_CONTACTS} et ${TARGET_IDEAL_CONTACTS} contacts RÉALISTES (noms fictifs, postes/entités cohérents) pour "${companyName}".
 Entités : ${entitiesStr}
-Couverture : TOUTES les entités, décideurs ET opérationnels sur les sujets data, cyber, IT, agile, scrum, dev, digital. Pour chaque entité : décideurs, champions (directeurs, heads), opérationnels (chefs de projet, tech leads), achats IT, RSSI/experts. Chaque contact avec linkedinMessage, emailMessage, followupMessage (courts et personnalisés). Summary : "profil type suggéré".
+Couverture : TOUTES les entités, décideurs ET opérationnels sur les sujets data, cyber, IT, agile, scrum, dev, digital. Pour chaque entité : décideurs, champions (directeurs, heads), opérationnels (chefs de projet, tech leads), achats IT, RSSI/experts. Summary : "profil type suggéré".
 Même format JSON : {"contacts": [...], "organigramme": [], "decisionChain": [], "uncoveredZones": []}.`
   }
 
@@ -625,7 +670,7 @@ Même format JSON : {"contacts": [...], "organigramme": [], "decisionChain": [],
       title: c.title || c.headline,
       about: (c.about || c.context || '').slice(0, 200),
     }))
-    const fallbackPrompt = `Enrichis ces ${subset.length} contacts pour "${companyName}". Pour chacun : entity, role, priority, summary, whyContact, linkedinMessage, emailMessage (subject + body), followupMessage (subject + body). Conserve nom et poste. Complète avec des profils types (data, cyber, agile, dev, champions, opérationnels, achats) jusqu'à entre ${TARGET_MIN_CONTACTS} et ${TARGET_IDEAL_CONTACTS} contacts. JSON : {"contacts": [...]}.`
+    const fallbackPrompt = `Enrichis ces ${subset.length} contacts pour "${companyName}". Pour chacun : entity, role, priority, summary, whyContact, linkedinUrl, email. Conserve nom et poste. Complète avec des profils types (data, cyber, agile, dev, champions, opérationnels, achats) jusqu'à entre ${TARGET_MIN_CONTACTS} et ${TARGET_IDEAL_CONTACTS} contacts. JSON : {"contacts": [...]}.`
     const fallbackResult = await callClaudeAPI(systemPrompt, fallbackPrompt, 12000, traceId, 'contacts_fallback', 90000)
     if (fallbackResult) {
       const parsed = parseContactsResult(fallbackResult)
@@ -638,8 +683,8 @@ Même format JSON : {"contacts": [...], "organigramme": [], "decisionChain": [],
 
   // Fallback 2 : génération minimale (profils types avec messages)
   console.log(JSON.stringify({ event: 'claude_contacts_retry', traceId, reason: result ? 'empty_list' : 'null_response' }))
-  const fallbackSystem = `Tu es BELLUM. Génère des contacts B2B en JSON uniquement. Entre ${TARGET_MIN_CONTACTS} et ${TARGET_IDEAL_CONTACTS} contacts. Toutes entités, sujets data/cyber/IT/agile/dev/digital. Chaque contact : name, title, entity, role, priority, summary, whyContact, linkedinMessage, emailMessage {subject, body}, followupMessage {subject, body}. Pas de texte avant/après.`
-  const fallbackUser = `Génère entre ${TARGET_MIN_CONTACTS} et ${TARGET_IDEAL_CONTACTS} contacts pour "${companyName}". Secteur: ${research.sector || 'N/A'}. Entités: ${entitiesStr}. Noms fictifs, postes réalistes. Décideurs, directeurs, chefs de projet, achats IT, RSSI, profils data/cyber/agile/dev. Messages courts.`
+  const fallbackSystem = `Tu es BELLUM. Génère des contacts B2B en JSON uniquement. Entre ${TARGET_MIN_CONTACTS} et ${TARGET_IDEAL_CONTACTS} contacts. Toutes entités, sujets data/cyber/IT/agile/dev/digital. Chaque contact : name, title, entity, role, priority, summary, whyContact, linkedinUrl, email. Pas de texte avant/après.`
+  const fallbackUser = `Génère entre ${TARGET_MIN_CONTACTS} et ${TARGET_IDEAL_CONTACTS} contacts pour "${companyName}". Secteur: ${research.sector || 'N/A'}. Entités: ${entitiesStr}. Noms fictifs, postes réalistes. Décideurs, directeurs, chefs de projet, achats IT, RSSI, profils data/cyber/agile/dev.`
   const retryResult = await callClaudeAPI(fallbackSystem, fallbackUser, 10000, traceId, 'contacts_retry', 90000)
   if (retryResult) {
     const parsed = parseContactsResult(retryResult)
@@ -728,7 +773,7 @@ async function callClaudeAPI(systemPrompt: string, userPrompt: string, maxTokens
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
       }),
-      signal: AbortSignal.timeout(timeout),
+      signal: timeoutSignal(timeout),
     })
 
     // VÉRIFICATION CRITIQUE : est-ce que Claude a répondu avec succès ?
@@ -846,7 +891,7 @@ async function apify_CompanyEmployees(companyName: string, keywords: any, traceI
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(buildInput(companies)),
-      signal: AbortSignal.timeout(200000),
+      signal: timeoutSignal(200000),
     })
 
     let items: any[] = []
@@ -868,7 +913,7 @@ async function apify_CompanyEmployees(companyName: string, keywords: any, traceI
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(buildInput([companyName])),
-      signal: AbortSignal.timeout(200000),
+      signal: timeoutSignal(200000),
     })
     const raw2 = await syncRes2.json().catch(() => null)
     if (syncRes2.ok && raw2 !== null) {
@@ -902,7 +947,7 @@ async function apify_ProfileSearch(companyName: string, searchQueryOrKeywords: s
         searchQuery,
         maxItems: 100,
       }),
-      signal: AbortSignal.timeout(15000),
+      signal: timeoutSignal(15000),
     })
 
     if (!runRes.ok) {
@@ -920,7 +965,7 @@ async function apify_ProfileSearch(companyName: string, searchQueryOrKeywords: s
     while (status === 'RUNNING' && attempts < 30) {
       await new Promise(r => setTimeout(r, 3000))
       try {
-        const statusRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${APIFY_API_TOKEN}`, { signal: AbortSignal.timeout(5000) })
+        const statusRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${APIFY_API_TOKEN}`, { signal: timeoutSignal(5000) })
         const statusData = await statusRes.json()
         status = statusData?.data?.status || 'FAILED'
       } catch { status = 'FAILED' }
@@ -929,7 +974,7 @@ async function apify_ProfileSearch(companyName: string, searchQueryOrKeywords: s
 
     if (status !== 'SUCCEEDED') return []
 
-    const dataRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${APIFY_API_TOKEN}`, { signal: AbortSignal.timeout(15000) })
+    const dataRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${APIFY_API_TOKEN}`, { signal: timeoutSignal(15000) })
     const raw = await dataRes.json()
     const items = Array.isArray(raw) ? raw : (Array.isArray((raw as any)?.items) ? (raw as any).items : [])
     console.log(JSON.stringify({ event: 'apify_search_done', traceId, count: items.length, rawIsArray: Array.isArray(raw) }))
