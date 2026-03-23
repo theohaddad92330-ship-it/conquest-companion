@@ -68,14 +68,14 @@ const App = () => (
 
             {/* App routes — with sidebar layout, protected */}
             <Route path="/dashboard" element={<ProtectedRoute><Layout><ErrorBoundary><Dashboard /></ErrorBoundary></Layout></ProtectedRoute>} />
-            <Route path="/search" element={<ProtectedRoute><Layout><Search /></Layout></ProtectedRoute>} />
+            <Route path="/search" element={<ProtectedRoute><Layout><ErrorBoundary><Search /></ErrorBoundary></Layout></ProtectedRoute>} />
             <Route path="/accounts" element={<ProtectedRoute><Layout><ErrorBoundary><Accounts /></ErrorBoundary></Layout></ProtectedRoute>} />
             <Route path="/accounts/:id" element={<ProtectedRoute><Layout><ErrorBoundary><AccountDetail /></ErrorBoundary></Layout></ProtectedRoute>} />
-            <Route path="/contacts" element={<ProtectedRoute><Layout><Contacts /></Layout></ProtectedRoute>} />
-            <Route path="/profile" element={<ProtectedRoute><Layout><Profile /></Layout></ProtectedRoute>} />
-            <Route path="/knowledge" element={<ProtectedRoute><Layout><KnowledgeBase /></Layout></ProtectedRoute>} />
-            <Route path="/billing" element={<ProtectedRoute><Layout><Billing /></Layout></ProtectedRoute>} />
-            <Route path="/help" element={<ProtectedRoute><Layout><Help /></Layout></ProtectedRoute>} />
+            <Route path="/contacts" element={<ProtectedRoute><Layout><ErrorBoundary><Contacts /></ErrorBoundary></Layout></ProtectedRoute>} />
+            <Route path="/profile" element={<ProtectedRoute><Layout><ErrorBoundary><Profile /></ErrorBoundary></Layout></ProtectedRoute>} />
+            <Route path="/knowledge" element={<ProtectedRoute><Layout><ErrorBoundary><KnowledgeBase /></ErrorBoundary></Layout></ProtectedRoute>} />
+            <Route path="/billing" element={<ProtectedRoute><Layout><ErrorBoundary><Billing /></ErrorBoundary></Layout></ProtectedRoute>} />
+            <Route path="/help" element={<ProtectedRoute><Layout><ErrorBoundary><Help /></ErrorBoundary></Layout></ProtectedRoute>} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>

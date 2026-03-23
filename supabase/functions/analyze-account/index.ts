@@ -4,11 +4,11 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const BRAVE_API_KEY = Deno.env.get('BRAVE_API_KEY') || ''
 const FIRECRAWL_API_KEY = Deno.env.get('FIRECRAWL_API_KEY') || ''
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
-const APIFY_API_TOKEN = Deno.env.get('APIFY_API_TOKEN') || ''
 
 function cors() {
+  const origin = Deno.env.get('ALLOWED_ORIGINS')?.trim()
   return {
-    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Origin': origin || '*',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
     'Content-Type': 'application/json',
   }
@@ -44,7 +44,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: cors() })
 
   const traceId = crypto.randomUUID().slice(0, 8)
-  console.log(JSON.stringify({ event: 'request_start', traceId, keys: { brave: !!BRAVE_API_KEY, firecrawl: !!FIRECRAWL_API_KEY, claude: !!ANTHROPIC_API_KEY, apify: !!APIFY_API_TOKEN } }))
+  console.log(JSON.stringify({ event: 'request_start', traceId, keys: { brave: !!BRAVE_API_KEY, firecrawl: !!FIRECRAWL_API_KEY, claude: !!ANTHROPIC_API_KEY } }))
 
   try {
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
@@ -159,6 +159,26 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
       console.log(JSON.stringify({ event: 'credits_rpc_skip', traceId, error: e instanceof Error ? e.message : 'unknown' }))
     }
 
+    // ── Vérification clés API critiques ──
+    const missingKeys: string[] = []
+    if (!BRAVE_API_KEY) missingKeys.push('BRAVE_API_KEY')
+    if (!FIRECRAWL_API_KEY) missingKeys.push('FIRECRAWL_API_KEY')
+    if (!ANTHROPIC_API_KEY) missingKeys.push('ANTHROPIC_API_KEY')
+
+    if (missingKeys.length > 0) {
+      const keyList = missingKeys.join(', ')
+      console.error(JSON.stringify({ event: 'missing_api_keys', traceId, keys: missingKeys }))
+      await setAnalysisStep(supabase, accountId, 'error_missing_keys', 100, traceId, { missingKeys })
+      await supabase
+        .from('accounts')
+        .update({
+          status: 'error',
+          error_message: `Configuration incomplète : clé(s) API manquante(s) (${keyList}). Contactez le support.`,
+        })
+        .eq('id', accountId)
+      return
+    }
+
     await setAnalysisStep(supabase, accountId, 'phase1_research', 10, traceId)
     // ════════════════════════════════════════
     // PHASE 1 — DEEP RESEARCH
@@ -207,51 +227,13 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
     console.log(JSON.stringify({ event: 'phase1_saved', traceId, seconds: Math.round((Date.now() - t0) / 1000) }))
 
     // ════════════════════════════════════════
-    // PHASE 2 — LINKEDIN SCRAPING (Apify) + fallback si échec ou 0 résultat
+    // PHASE 2 — CONTACTS (sources web uniquement pour l'instant)
     // ════════════════════════════════════════
     await setAnalysisStep(supabase, accountId, 'phase2_contacts_source', 30, traceId)
     let rawContacts: any[] = []
-    let apifyWorked = false
 
-    if (APIFY_API_TOKEN) {
-      try {
-        const companyEmployees = await apify_CompanyEmployees(companyName, research.linkedinSearchKeywords, traceId, braveResults.linkedinCompanyUrl, onboardingData)
-        if (companyEmployees.length > 0) {
-          rawContacts.push(...companyEmployees)
-          apifyWorked = true
-        }
-        const topicKeywords = buildTopicKeywordsForApify(onboardingData)
-        const searchQueries = buildProfileSearchQueries(companyName, research.linkedinSearchKeywords, topicKeywords)
-        for (const query of searchQueries) {
-          const searchResults = await apify_ProfileSearch(companyName, query, traceId, onboardingData)
-          if (searchResults.length > 0) {
-            rawContacts.push(...searchResults)
-            apifyWorked = true
-          }
-        }
-        const seen = new Set<string>()
-        rawContacts = rawContacts.filter((c: any) => {
-          const name = `${c.firstName || ''} ${c.lastName || ''}`.trim() || c.fullName || c.name || ''
-          const key = (c.linkedinUrl || c.url || name || `idx-${seen.size}`).toLowerCase()
-          if (seen.has(key)) return false
-          seen.add(key)
-          return true
-        })
-      } catch (apifyErr) {
-        console.log(JSON.stringify({ event: 'apify_error_fallback', traceId, error: apifyErr instanceof Error ? apifyErr.message : 'unknown', message: 'Apify a échoué — fallback web + génération' }))
-        rawContacts = []
-      }
-      if (rawContacts.length === 0) {
-        console.log(JSON.stringify({ event: 'apify_called_zero_fallback', traceId, message: 'Apify invoqué mais 0 contacts — fallback web + génération (cible 150-300 contacts)' }))
-      }
-      console.log(JSON.stringify({ event: 'phase2_done', traceId, totalContacts: rawContacts.length, apifyWorked }))
-    } else {
-      console.log(JSON.stringify({ event: 'phase2_skipped', traceId, reason: 'no_apify_token' }))
-    }
-
-    // Fallback : personnes réelles extraites du contenu web (Brave + Firecrawl) par Claude en Phase 1 — utilisé aussi quand Apify a été appelé mais a retourné 0
-    let fromWebMentioned = false
-    if (rawContacts.length === 0 && Array.isArray(research.peopleMentioned) && research.peopleMentioned.length > 0) {
+    // Source : personnes réelles extraites du contenu web (Brave + Firecrawl) par Claude en Phase 1
+    if (Array.isArray(research.peopleMentioned) && research.peopleMentioned.length > 0) {
       rawContacts = research.peopleMentioned.map((p: any) => ({
         name: p.name || '',
         title: p.title || '',
@@ -259,16 +241,17 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
         linkedin: null,
         location: '',
       }))
-      fromWebMentioned = true
-      console.log(JSON.stringify({ event: 'phase2_web_fallback', traceId, peopleMentionedCount: rawContacts.length }))
+      console.log(JSON.stringify({ event: 'phase2_web_contacts', traceId, count: rawContacts.length }))
+    } else {
+      console.log(JSON.stringify({ event: 'phase2_no_contacts_found', traceId }))
     }
 
     // ════════════════════════════════════════
     // PHASE 3 — ENRICHISSEMENT CONTACTS
     // ════════════════════════════════════════
     await setAnalysisStep(supabase, accountId, 'phase3_enrich_contacts', 45, traceId, { rawContactsCount: rawContacts.length })
-    console.log(JSON.stringify({ event: 'phase3_start', traceId, rawContactsCount: rawContacts.length, apifyWorked, fromWebMentioned }))
-    const enrichResult = await callClaude_Contacts(companyName, rawContacts, research, onboardingData, apifyWorked, fromWebMentioned, traceId)
+    console.log(JSON.stringify({ event: 'phase3_start', traceId, rawContactsCount: rawContacts.length }))
+    const enrichResult = await callClaude_Contacts(companyName, rawContacts, research, onboardingData, traceId)
     const enrichedContacts = enrichResult.contacts
     const contactsMeta = enrichResult.meta
     console.log(JSON.stringify({ event: 'phase3_done', traceId, enrichedCount: enrichedContacts.length }))
@@ -313,7 +296,7 @@ async function processAnalysis(supabase: any, accountId: string, userId: string,
         email_message: null,
         linkedin_message: null,
         followup_message: null,
-        source: apifyWorked ? 'linkedin_apify' : (fromWebMentioned ? 'web_mentioned' : 'ai_generated'),
+        source: rawContacts.length > 0 ? 'web_mentioned' : 'ai_generated',
       }))
       const { error: insertErr } = await supabase.from('contacts').insert(rows)
       if (insertErr) {
@@ -390,7 +373,9 @@ function buildProfileContext(onboardingData: any): { geoFocus: string; personaFo
 // BRAVE SEARCH
 // ============================================================
 async function searchBrave(companyName: string, onboardingData: any, traceId: string): Promise<{ results: any[], urls: string[], linkedinCompanyUrl: string | null }> {
-  if (!BRAVE_API_KEY) { console.log(JSON.stringify({ event: 'brave_skip', traceId })); return { results: [], urls: [], linkedinCompanyUrl: null } }
+  if (!BRAVE_API_KEY) {
+    throw new Error('BRAVE_API_KEY manquante — impossible de lancer la recherche web')
+  }
   const year = new Date().getFullYear()
   const offers = (onboardingData.offers || []).slice(0, 2).join(' ')
   const geo = onboardingData.geo || []
@@ -437,7 +422,13 @@ async function searchBrave(companyName: string, onboardingData: any, traceId: st
 // FIRECRAWL SCRAPING
 // ============================================================
 async function scrapePages(urls: string[], traceId: string): Promise<string> {
-  if (!FIRECRAWL_API_KEY || urls.length === 0) { console.log(JSON.stringify({ event: 'firecrawl_skip', traceId })); return '' }
+  if (!FIRECRAWL_API_KEY) {
+    throw new Error('FIRECRAWL_API_KEY manquante — impossible de scraper les pages')
+  }
+  if (urls.length === 0) {
+    console.log(JSON.stringify({ event: 'firecrawl_no_urls', traceId }))
+    return ''
+  }
 
   // Prioriser et filtrer les URLs — plus de pages pour maximiser les noms (annuaires, équipes, nominations)
   const skip = ['linkedin.com', 'facebook.com', 'twitter.com', 'youtube.com']
@@ -581,7 +572,7 @@ function parseContactsResult(result: any): { contacts: any[], meta: any } {
   return { contacts: list, meta }
 }
 
-async function callClaude_Contacts(companyName: string, rawContacts: any[], research: any, onboardingData: any, apifyWorked: boolean, fromWebMentioned: boolean, traceId: string): Promise<{ contacts: any[], meta: any }> {
+async function callClaude_Contacts(companyName: string, rawContacts: any[], research: any, onboardingData: any, traceId: string): Promise<{ contacts: any[], meta: any }> {
   if (!ANTHROPIC_API_KEY) { console.error(JSON.stringify({ event: 'claude2_no_key', traceId })); return { contacts: [], meta: null } }
 
   // Contexte réduit pour limiter la taille du prompt et éviter timeout (120s)
@@ -617,34 +608,13 @@ IMPORTANT : ne génère PAS les messages (email/LinkedIn/relance) ici. On les g�
 Réponds UNIQUEMENT en JSON valide : {"contacts": [{ "name", "title", "entity", "location", "role", "priority", "summary", "whyContact", "linkedinUrl", "email" }], "organigramme": [], "decisionChain": [], "uncoveredZones": []}.`
 
   let userPrompt: string
-  if (apifyWorked && rawContacts.length > 0) {
+  if (rawContacts.length > 0) {
     const limited = rawContacts.slice(0, MAX_RAW_CONTACTS_FOR_PROMPT)
-    const simplified = limited.map((c: any) => ({
-      name: `${c.firstName || ''} ${c.lastName || ''}`.trim() || c.fullName || c.name,
-      title: c.headline || c.title || c.currentPosition?.[0]?.position,
-      company: c.currentPosition?.[0]?.companyName || companyName,
-      linkedin: c.linkedinUrl || c.url,
-      about: String(c.about || '').slice(0, 200),
-      location: c.location?.linkedinText || c.location?.parsed?.city || '',
-    }))
-    userPrompt = `Enrichis ces ${simplified.length} contacts LinkedIn pour "${companyName}". Pour CHAQUE contact : name, title, entity, location, role, priority, summary, whyContact, linkedinUrl, email. Si la liste fournie est inférieure à ${TARGET_MIN_CONTACTS}, complète avec des profils types (même entités, sujets data/cyber/agile/dev) pour atteindre entre ${TARGET_MIN_CONTACTS} et ${TARGET_IDEAL_CONTACTS} contacts. Retourne un JSON avec "contacts", "organigramme", "decisionChain", "uncoveredZones".
-
-${JSON.stringify(simplified, null, 2)}`
-  } else if (fromWebMentioned && rawContacts.length > 0) {
-    const limited = rawContacts.slice(0, MAX_RAW_CONTACTS_FOR_PROMPT)
-    const needCompletion = limited.length < TARGET_MIN_CONTACTS
-    const targetTotal = needCompletion ? TARGET_IDEAL_CONTACTS : Math.min(limited.length + 50, TARGET_IDEAL_CONTACTS)
-    if (needCompletion) {
-      userPrompt = `Voici des personnes RÉELLES extraites du web pour "${companyName}" (${limited.length} noms). CONSERVE leurs noms et postes. Enrichis CHAQUE fiche : entity, role, priority, summary, whyContact, linkedinUrl, email. Puis complète avec des profils types (noms fictifs, postes réalistes, TOUS NIVEAUX — data, cyber, IT, agile, scrum, dev, digital) pour atteindre entre ${TARGET_MIN_CONTACTS} et ${TARGET_IDEAL_CONTACTS} contacts. Pour les compléments : summary "Profil type suggéré (non sourcé web)".
+    userPrompt = `Voici des personnes RÉELLES extraites du web pour "${companyName}" (${limited.length} noms). CONSERVE leurs noms et postes exacts. Enrichis CHAQUE contact : entity (filiale/BU), role, priority, summary, whyContact, linkedinUrl, email.
+Si tu peux en suggérer d'autres (même entités, sujets data/cyber/agile/dev) pour atteindre jusqu'à ${TARGET_IDEAL_CONTACTS}, ajoute-les avec summary "Profil type suggéré".
 Retourne le même format JSON : {"contacts": [...], "organigramme": [], "decisionChain": [], "uncoveredZones": []}.
 
 ${JSON.stringify(limited, null, 2)}`
-    } else {
-      userPrompt = `Voici des personnes RÉELLES extraites du web pour "${companyName}" (${limited.length} noms). CONSERVE leurs noms et postes exacts. Enrichis CHAQUE contact : entity (filiale/BU), role, priority, summary, whyContact, linkedinUrl, email. Si tu peux en suggérer d'autres (même entités, sujets data/cyber/agile/dev) pour atteindre jusqu'à ${TARGET_IDEAL_CONTACTS}, ajoute-les avec summary "Profil type suggéré". Sinon enrichis uniquement cette liste.
-Retourne le même format JSON : {"contacts": [...], "organigramme": [], "decisionChain": [], "uncoveredZones": []}.
-
-${JSON.stringify(limited, null, 2)}`
-    }
   } else {
     userPrompt = `Génère entre ${TARGET_MIN_CONTACTS} et ${TARGET_IDEAL_CONTACTS} contacts RÉALISTES (noms fictifs, postes/entités cohérents) pour "${companyName}".
 Entités : ${entitiesStr}
@@ -662,7 +632,7 @@ Même format JSON : {"contacts": [...], "organigramme": [], "decisionChain": [],
     }
   }
 
-  // Fallback 1 : si on avait des contacts web/Apify, enrichir seulement un sous-ensemble (réponse plus courte = plus fiable)
+  // Fallback 1 : si on avait des contacts web, enrichir seulement un sous-ensemble (réponse plus courte = plus fiable)
   if (rawContacts.length > 0) {
     console.log(JSON.stringify({ event: 'claude_contacts_fallback_partial', traceId, rawCount: rawContacts.length }))
     const subset = rawContacts.slice(0, 50).map((c: any) => ({
@@ -832,155 +802,4 @@ async function callClaudeAPI(systemPrompt: string, userPrompt: string, maxTokens
   }
 }
 
-function buildTopicKeywordsForApify(onboardingData: any): string[] {
-  const offers = onboardingData.offers || []
-  const defaultTopics = ['Data', 'Cyber', 'IT', 'Tech', 'Agile', 'Scrum', 'Dev', 'Digital']
-  if (!Array.isArray(offers) || offers.length === 0) return defaultTopics
-  const normalized = offers.map((o: any) => String(o).trim()).filter(Boolean).slice(0, 8)
-  return normalized.length >= 3 ? normalized : [...normalized, ...defaultTopics].slice(0, 8)
-}
 
-function buildProfileSearchQueries(companyName: string, keywords: any, topicKeywords: string[]): string[] {
-  const generic = (keywords?.generic || ['DSI', 'CTO', 'Achats IT']).slice(0, 4)
-  const queries: string[] = []
-  queries.push(`${companyName} ${generic.join(' ')}`)
-  if (topicKeywords.length >= 2) {
-    queries.push(`${companyName} ${topicKeywords.slice(0, 3).join(' ')}`)
-    if (topicKeywords.length >= 5) queries.push(`${companyName} ${topicKeywords.slice(3, 6).join(' ')}`)
-  }
-  const byEntity = keywords?.byEntity || []
-  for (let i = 0; i < Math.min(2, byEntity.length); i++) {
-    const ent = byEntity[i]
-    const entName = typeof ent === 'object' && ent?.entity ? ent.entity : String(ent)
-    const kw = (typeof ent === 'object' && Array.isArray(ent?.keywords) ? ent.keywords : ['DSI', 'Head']).slice(0, 2)
-    queries.push(`${companyName} ${entName} ${kw.join(' ')}`)
-  }
-  return queries.slice(0, 3)
-}
-
-// ============================================================
-// APIFY — Company Employees (sync : 1 appel, on attend le résultat)
-// ============================================================
-async function apify_CompanyEmployees(companyName: string, keywords: any, traceId: string, braveLinkedinUrl?: string | null, _onboardingData?: any): Promise<any[]> {
-  if (!APIFY_API_TOKEN) return []
-  console.log(JSON.stringify({ event: 'apify_employees_start', traceId, companyName }))
-
-  const keywordFilter = (keywords?.generic || ['DSI', 'CTO', 'Data', 'Cloud', 'IT', 'Digital', 'Agile', 'Cyber']).join(' ')
-  const actorId = 'harvestapi~linkedin-company-employees'
-  const buildInput = (companies: string[]) => ({
-    companies,
-    searchQuery: keywordFilter || undefined,
-    maxItems: 250,
-    companyBatchMode: 'all_at_once',
-    profileScraperMode: 'Short ($4 per 1k)',
-  })
-
-  try {
-    // 1) Essayer avec l'URL LinkedIn trouvée par Brave, ou l'URL construite
-    let companies: string[] = []
-    if (braveLinkedinUrl) {
-      companies = [braveLinkedinUrl]
-    } else {
-      const companySlug = companyName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
-      companies = [`https://www.linkedin.com/company/${companySlug}`]
-    }
-    console.log(JSON.stringify({ event: 'apify_employees_input', traceId, companies }))
-
-    const url = `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${APIFY_API_TOKEN}&timeout=180`
-    const syncRes = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildInput(companies)),
-      signal: timeoutSignal(200000),
-    })
-
-    let items: any[] = []
-    const raw = await syncRes.json().catch(() => null)
-    if (syncRes.ok && raw !== null) {
-      items = Array.isArray(raw) ? raw : (Array.isArray((raw as any)?.items) ? (raw as any).items : [])
-    } else {
-      console.log(JSON.stringify({ event: 'apify_employees_sync_response', traceId, status: syncRes.status, body: typeof raw === 'object' ? JSON.stringify(raw).slice(0, 400) : String(raw).slice(0, 400) }))
-    }
-
-    if (items.length > 0) {
-      console.log(JSON.stringify({ event: 'apify_employees_done', traceId, count: items.length, source: 'sync' }))
-      return items
-    }
-
-    // 2) Fallback : envoyer le NOM de l'entreprise (l'actor accepte "company names, it will try to find the company")
-    console.log(JSON.stringify({ event: 'apify_employees_fallback_name', traceId, companyName }))
-    const syncRes2 = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildInput([companyName])),
-      signal: timeoutSignal(200000),
-    })
-    const raw2 = await syncRes2.json().catch(() => null)
-    if (syncRes2.ok && raw2 !== null) {
-      const items2 = Array.isArray(raw2) ? raw2 : (Array.isArray((raw2 as any)?.items) ? (raw2 as any).items : [])
-      console.log(JSON.stringify({ event: 'apify_employees_done', traceId, count: items2.length, source: 'sync_fallback_name' }))
-      return items2
-    }
-    return []
-  } catch (err) {
-    console.error(JSON.stringify({ event: 'apify_employees_error', traceId, error: (err as Error).message }))
-    return []
-  }
-}
-
-// ============================================================
-// APIFY — Profile Search (Actor complémentaire)
-// ============================================================
-async function apify_ProfileSearch(companyName: string, searchQueryOrKeywords: string | any, traceId: string, _onboardingData?: any): Promise<any[]> {
-  if (!APIFY_API_TOKEN) return []
-  const searchQuery = typeof searchQueryOrKeywords === 'string'
-    ? searchQueryOrKeywords
-    : `${companyName} ${(searchQueryOrKeywords?.generic || ['DSI', 'CTO']).slice(0, 3).join(' ')}`
-  console.log(JSON.stringify({ event: 'apify_search_start', traceId, searchQuery: searchQuery.slice(0, 80) }))
-
-  try {
-    const actorId = 'harvestapi~linkedin-profile-search'
-    const runRes = await fetch(`https://api.apify.com/v2/acts/${actorId}/runs?token=${APIFY_API_TOKEN}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        searchQuery,
-        maxItems: 100,
-      }),
-      signal: timeoutSignal(15000),
-    })
-
-    if (!runRes.ok) {
-      console.error(JSON.stringify({ event: 'apify_search_run_error', traceId, status: runRes.status }))
-      return []
-    }
-
-    const runData = await runRes.json()
-    const runId = runData?.data?.id
-    if (!runId) return []
-
-    // Polling
-    let status = 'RUNNING'
-    let attempts = 0
-    while (status === 'RUNNING' && attempts < 30) {
-      await new Promise(r => setTimeout(r, 3000))
-      try {
-        const statusRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${APIFY_API_TOKEN}`, { signal: timeoutSignal(5000) })
-        const statusData = await statusRes.json()
-        status = statusData?.data?.status || 'FAILED'
-      } catch { status = 'FAILED' }
-      attempts++
-    }
-
-    if (status !== 'SUCCEEDED') return []
-
-    const dataRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${APIFY_API_TOKEN}`, { signal: timeoutSignal(15000) })
-    const raw = await dataRes.json()
-    const items = Array.isArray(raw) ? raw : (Array.isArray((raw as any)?.items) ? (raw as any).items : [])
-    console.log(JSON.stringify({ event: 'apify_search_done', traceId, count: items.length, rawIsArray: Array.isArray(raw) }))
-    return items
-  } catch (err) {
-    console.error(JSON.stringify({ event: 'apify_search_error', traceId, error: (err as Error).message }))
-    return []
-  }
-}

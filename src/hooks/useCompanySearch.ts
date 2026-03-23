@@ -17,11 +17,13 @@ export function useCompanySearch() {
   const [suggestions, setSuggestions] = useState<CompanySuggestion[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchWarning, setSearchWarning] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const search = useCallback((query: string) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     setSearchError(null);
+    setSearchWarning(null);
 
     const parsed = companySearchSchema.safeParse({ query });
     if (!parsed.success) {
@@ -34,7 +36,7 @@ export function useCompanySearch() {
 
     debounceRef.current = setTimeout(async () => {
       try {
-        const res = await authedPostJson<{ results?: CompanySuggestion[]; error?: string }>('search-companies', {
+        const res = await authedPostJson<{ results?: CompanySuggestion[]; error?: string; warning?: string }>('search-companies', {
           query: parsed.data.query,
         });
         if (!res.ok) {
@@ -42,6 +44,7 @@ export function useCompanySearch() {
           setSearchError(res.error);
         } else {
           setSuggestions(res.data?.results || []);
+          setSearchWarning(res.data?.warning || null);
         }
       } catch {
         setSuggestions([]);
@@ -55,9 +58,10 @@ export function useCompanySearch() {
   const clear = useCallback(() => {
     setSuggestions([]);
     setSearchError(null);
+    setSearchWarning(null);
     setIsSearching(false);
     if (debounceRef.current) clearTimeout(debounceRef.current);
   }, []);
 
-  return { suggestions, isSearching, searchError, search, clear };
+  return { suggestions, isSearching, searchError, searchWarning, search, clear };
 }

@@ -217,6 +217,7 @@ export function useAnalysisPolling() {
               messages_generating: 'Génération des messages (à la demande)…',
               completed: 'Analyse terminée !',
               timeout: "Temps maximum atteint — arrêt de l'analyse…",
+              error_missing_keys: 'Configuration API incomplète — contactez le support.',
               error: "Erreur pendant l'analyse…",
             };
             currentStep = map[step] || currentStep;

@@ -137,7 +137,7 @@ export default function SearchPage() {
   const { toast } = useToast();
   const { state: analysis, startAnalysis, resetState, resumeAnalysis, stopPolling } = useAnalysisPolling();
   const cancelAnalysis = useCancelAnalysis();
-  const { suggestions, isSearching: isSuggesting, searchError, search: searchSuggestions, clear: clearSuggestions } = useCompanySearch();
+  const { suggestions, isSearching: isSuggesting, searchError, searchWarning, search: searchSuggestions, clear: clearSuggestions } = useCompanySearch();
 
   const isAnalyzingOrLoading = analysis.status === "loading" || analysis.status === "analyzing";
   useEffect(() => {
@@ -313,6 +313,11 @@ export default function SearchPage() {
               ) : "Analyser"}
             </Button>
           </div>
+          {query.trim().length >= 2 && !isSuggesting && suggestions.length === 0 && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {searchWarning || "Aucun résultat de suggestion. Tapez le nom exact et lancez l'analyse directement."}
+            </p>
+          )}
         </div>
       </div>
 

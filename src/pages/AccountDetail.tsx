@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
-  ArrowLeft, Download, FileSpreadsheet, Pencil, Building2, Users,
+  ArrowLeft, Download, FileSpreadsheet, Building2, Users,
   GitBranch, AlertTriangle, TrendingUp, Target, Mail, Linkedin,
   RotateCw, Phone, ExternalLink, Copy, CheckCircle, Star, Loader2, Circle, MapPin,
   Gauge, DoorOpen, Lightbulb, FileCheck, ChevronRight, BarChart2, Zap, Shield, Gem, Flag,
@@ -1315,7 +1315,6 @@ export default function AccountDetail() {
   const cancelAnalysis = useCancelAnalysis();
   const { profile } = useProfile();
   const isProfileReady = profile?.onboarding_completed && profile?.onboarding_data;
-  const [adjustPrompt, setAdjustPrompt] = useState("");
 
   const isAnalyzing = account?.status === "analyzing";
   const analysisSteps = useMemo(() => {
@@ -1502,32 +1501,6 @@ export default function AccountDetail() {
       </Tabs>
       </div>
 
-      {/* Adjust zone */}
-      <Card className="border-border card-neutral rounded-xl">
-        <CardContent className="p-6 space-y-3">
-          <h3 className="font-display text-sm font-semibold flex items-center gap-2">
-            <Pencil className="h-4 w-4 text-muted-foreground" />Ajuster la recherche
-          </h3>
-          <Input
-            placeholder={'Ex : "Exclure la filiale UK", "Insister sur l\'angle cybersécurité", "Ajouter des profils data"'}
-            value={adjustPrompt}
-            onChange={(e) => setAdjustPrompt(e.target.value)}
-            className="bg-card search-glow"
-          />
-          <div className="flex justify-end">
-            <Button
-              size="sm"
-              disabled={!adjustPrompt.trim()}
-              onClick={() => {
-                toast({ title: "Régénération lancée", description: "L'analyse est en cours de mise à jour avec vos ajustements." });
-                setAdjustPrompt("");
-              }}
-            >
-              Régénérer →
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }

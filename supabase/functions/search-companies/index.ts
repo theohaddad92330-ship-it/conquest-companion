@@ -82,8 +82,8 @@ serve(async (req) => {
     const PAPPERS_API_KEY = Deno.env.get('PAPPERS_API_KEY') || ''
 
     if (!PAPPERS_API_KEY) {
-      const demoResults = generateDemoSuggestions(query)
-      return jsonResponse({ results: demoResults }, 200)
+      console.log(JSON.stringify({ event: 'search_no_pappers_key', query: query.slice(0, 50) }))
+      return jsonResponse({ results: [], warning: 'Recherche enrichie indisponible (clé Pappers non configurée). Tapez le nom exact de l\'entreprise et lancez l\'analyse.' }, 200)
     }
 
     const res = await fetch(
@@ -111,27 +111,3 @@ serve(async (req) => {
     )
   }
 })
-
-function generateDemoSuggestions(query: string) {
-  const allCompanies = [
-    { name: 'Société Générale', siren: '552120222', city: 'Paris La Défense', sector: 'Banque', employees: '117 000', postalCode: null, legalForm: null },
-    { name: 'Sopra Steria', siren: '326820065', city: 'Paris', sector: 'ESN', employees: '56 000', postalCode: null, legalForm: null },
-    { name: 'BNP Paribas', siren: '662042449', city: 'Paris 9ème', sector: 'Banque', employees: '185 000', postalCode: null, legalForm: null },
-    { name: 'Capgemini', siren: '330703844', city: 'Paris', sector: 'ESN', employees: '360 000', postalCode: null, legalForm: null },
-    { name: 'Airbus', siren: '383474814', city: 'Toulouse', sector: 'Aéronautique', employees: '130 000', postalCode: null, legalForm: null },
-    { name: 'SNCF', siren: '552049447', city: 'Saint-Denis', sector: 'Transport', employees: '270 000', postalCode: null, legalForm: null },
-    { name: 'TotalEnergies', siren: '542051180', city: 'La Défense', sector: 'Énergie', employees: '100 000', postalCode: null, legalForm: null },
-    { name: 'Orange', siren: '380129866', city: 'Paris', sector: 'Telecom', employees: '137 000', postalCode: null, legalForm: null },
-    { name: 'Crédit Agricole', siren: '784608416', city: 'Montrouge', sector: 'Banque', employees: '75 000', postalCode: null, legalForm: null },
-    { name: 'Accenture France', siren: '732829320', city: 'Paris', sector: 'Conseil', employees: '12 000', postalCode: null, legalForm: null },
-    { name: 'Atos', siren: '323623603', city: 'Bezons', sector: 'ESN', employees: '95 000', postalCode: null, legalForm: null },
-    { name: 'Thales', siren: '552059024', city: 'La Défense', sector: 'Défense', employees: '81 000', postalCode: null, legalForm: null },
-    { name: 'Devoteam', siren: '402490830', city: 'Levallois-Perret', sector: 'ESN', employees: '10 000', postalCode: null, legalForm: null },
-    { name: 'Alten', siren: '348607417', city: 'Boulogne-Billancourt', sector: 'Ingénierie', employees: '57 000', postalCode: null, legalForm: null },
-    { name: 'CGI France', siren: '702042755', city: 'Paris', sector: 'ESN', employees: '90 000', postalCode: null, legalForm: null },
-  ]
-  const q = query.toLowerCase()
-  return allCompanies
-    .filter(c => c.name.toLowerCase().includes(q))
-    .slice(0, 5)
-}
