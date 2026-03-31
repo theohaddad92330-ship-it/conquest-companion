@@ -1,7 +1,7 @@
 -- ==============================================
 -- TABLE: accounts (comptes analysés)
 -- ==============================================
-CREATE TABLE public.accounts (
+CREATE TABLE IF NOT EXISTS public.accounts (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   company_name TEXT NOT NULL,
@@ -41,7 +41,7 @@ FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 -- ==============================================
 -- TABLE: contacts (contacts par compte)
 -- ==============================================
-CREATE TABLE public.contacts (
+CREATE TABLE IF NOT EXISTS public.contacts (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   account_id UUID NOT NULL REFERENCES public.accounts(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -83,7 +83,7 @@ FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 -- ==============================================
 -- TABLE: attack_angles (angles d'attaque)
 -- ==============================================
-CREATE TABLE public.attack_angles (
+CREATE TABLE IF NOT EXISTS public.attack_angles (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   account_id UUID NOT NULL REFERENCES public.accounts(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -103,7 +103,7 @@ CREATE POLICY "Users can delete own angles" ON public.attack_angles FOR DELETE U
 -- ==============================================
 -- TABLE: action_plans (plans d'action)
 -- ==============================================
-CREATE TABLE public.action_plans (
+CREATE TABLE IF NOT EXISTS public.action_plans (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   account_id UUID NOT NULL REFERENCES public.accounts(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -127,7 +127,7 @@ FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 -- ==============================================
 -- TABLE: user_credits (crédits utilisateur)
 -- ==============================================
-CREATE TABLE public.user_credits (
+CREATE TABLE IF NOT EXISTS public.user_credits (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
   plan TEXT NOT NULL DEFAULT 'free' CHECK (plan IN ('free','starter','pro','scale')),

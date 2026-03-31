@@ -15,11 +15,22 @@ function clearPersistedAnalysis() {
   } catch {}
 }
 
+interface CompanySelectionPayload {
+  siren?: string | null;
+  selectedName?: string | null;
+}
+
 /** Edge Function analyze-account — wrapper stable (évite divergences fetch/invoke). */
-async function invokeAnalyzeAccount(companyName: string, userContext?: string): Promise<{ accountId?: string; error?: string }> {
+async function invokeAnalyzeAccount(
+  companyName: string,
+  userContext?: string,
+  selection?: CompanySelectionPayload
+): Promise<{ accountId?: string; error?: string }> {
   const res = await authedPostJson<{ accountId?: string; error?: string }>("analyze-account", {
     companyName,
     userContext: userContext ?? undefined,
+    companySiren: selection?.siren ?? undefined,
+    selectedCompanyName: selection?.selectedName ?? undefined,
   });
   if (!res.ok) return { error: res.error };
   if (res.data?.error) return { error: res.data.error };
@@ -76,13 +87,19 @@ export function useAnalysisPolling() {
     });
   }, [stopPolling]);
 
-  const startAnalysis = useCallback(async (companyName: string, userContext?: string) => {
+  const startAnalysis = useCallback(async (
+    companyName: string,
+    userContext?: string,
+    selection?: CompanySelectionPayload
+  ) => {
     stopPolling();
     // Normalisation : trim + espaces multiples → un seul (pour noms mal tapés ou copiés-collés)
     const normalized = (companyName ?? '').trim().replace(/\s+/g, ' ');
     const parsed = analyzeAccountSchema.safeParse({
       companyName: normalized,
       userContext: userContext ?? undefined,
+      companySiren: selection?.siren ?? undefined,
+      selectedCompanyName: selection?.selectedName ?? undefined,
     });
     if (!parsed.success) {
       setState(prev => ({
@@ -110,7 +127,10 @@ export function useAnalysisPolling() {
     });
 
     try {
-      const result = await invokeAnalyzeAccount(trimmedName, parsed.data.userContext);
+      const result = await invokeAnalyzeAccount(trimmedName, parsed.data.userContext, {
+        siren: parsed.data.companySiren ?? null,
+        selectedName: parsed.data.selectedCompanyName ?? null,
+      });
 
       if (result.error) {
         throw new Error(result.error);

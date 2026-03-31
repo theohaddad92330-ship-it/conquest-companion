@@ -16,6 +16,12 @@ function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: cors() })
 }
 
+function err(message: string, code: string, traceId: string, status = 400, details?: Record<string, unknown>) {
+  const payload: any = { error: { message, code, traceId } }
+  if (details && typeof details === 'object') payload.error.details = details
+  return json(payload, status)
+}
+
 async function callClaude(systemPrompt: string, userPrompt: string, traceId: string, timeoutMs = 120000) {
   if (!ANTHROPIC_API_KEY) return null
   try {
@@ -61,15 +67,15 @@ serve(async (req) => {
   try {
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
     const authHeader = req.headers.get('Authorization')
-    if (!authHeader?.startsWith('Bearer ')) return json({ error: 'Non authentifié' }, 401)
+    if (!authHeader?.startsWith('Bearer ')) return err('Non authentifié', 'AUTH_REQUIRED', traceId, 401)
     const { data: { user }, error: authErr } = await supabase.auth.getUser(authHeader.replace('Bearer ', '').trim())
-    if (authErr || !user) return json({ error: 'Non authentifié' }, 401)
+    if (authErr || !user) return err('Non authentifié', 'AUTH_INVALID', traceId, 401)
 
     const body = await req.json().catch(() => ({}))
     const accountId = typeof body.accountId === 'string' ? body.accountId : ''
     const contactIds = Array.isArray(body.contactIds) ? body.contactIds.filter((x: any) => typeof x === 'string') : null
     const limit = Math.min(50, Math.max(1, Number(body.limit ?? 20) || 20))
-    if (!accountId) return json({ error: 'accountId requis' }, 400)
+    if (!accountId) return err('accountId requis', 'BAD_INPUT', traceId, 400)
 
     const { data: account, error: accErr } = await supabase
       .from('accounts')
@@ -77,9 +83,24 @@ serve(async (req) => {
       .eq('id', accountId)
       .eq('user_id', user.id)
       .single()
-    if (accErr || !account) return json({ error: 'Compte introuvable' }, 404)
+    if (accErr || !account) return err('Compte introuvable', 'NOT_FOUND', traceId, 404)
 
-    await supabase.from('accounts').update({ analysis_step: 'messages_generating', analysis_progress: 90, analysis_trace: { traceId, at: new Date().toISOString() } }).eq('id', accountId)
+    // IMPORTANT: cette fonction ne doit jamais écraser l'état global d'analyse (analysis_step/progress).
+    // Elle ne fait que générer/mettre à jour des messages sur les contacts.
+    try {
+      const prevTrace = (account as any).analysis_trace && typeof (account as any).analysis_trace === 'object'
+        ? (account as any).analysis_trace
+        : {}
+      await supabase.from('accounts').update({
+        messages_last_generated_trace: { traceId, at: new Date().toISOString(), status: 'running' },
+        analysis_trace: {
+          ...prevTrace,
+          messages: { traceId, at: new Date().toISOString(), status: 'running' },
+        },
+      }).eq('id', accountId)
+    } catch {
+      // ignore trace failures
+    }
 
     let contactsQuery = supabase
       .from('contacts')
@@ -101,7 +122,11 @@ serve(async (req) => {
 
     const { data: contacts } = await contactsQuery
     const list = Array.isArray(contacts) ? contacts : []
-    if (list.length === 0) return json({ error: 'Aucun contact' }, 400)
+    if (list.length === 0) return err('Aucun contact', 'NO_CONTACTS', traceId, 400)
+
+    if (!ANTHROPIC_API_KEY) {
+      return err("Configuration API incomplète — contactez le support.", "MISSING_KEYS", traceId, 500, { missingKeys: ["ANTHROPIC_API_KEY"] })
+    }
 
     const raw = (account as any).raw_analysis || {}
     const context = {
@@ -156,12 +181,28 @@ Contact: ${JSON.stringify({
       if (!updErr) updated++
     }
 
-    await supabase.from('accounts').update({ analysis_step: 'completed', analysis_progress: 100, analysis_trace: { traceId, at: new Date().toISOString(), updated } }).eq('id', accountId)
+    // Metadonnées dédiées messages (sans toucher analysis_step/progress)
+    try {
+      const prevTrace = (account as any).analysis_trace && typeof (account as any).analysis_trace === 'object'
+        ? (account as any).analysis_trace
+        : {}
+      await supabase.from('accounts').update({
+        messages_last_generated_at: new Date().toISOString(),
+        messages_last_generated_count: updated,
+        messages_last_generated_trace: { traceId, at: new Date().toISOString(), status: 'ok', updated },
+        analysis_trace: {
+          ...prevTrace,
+          messages: { traceId, at: new Date().toISOString(), status: 'ok', updated },
+        },
+      }).eq('id', accountId)
+    } catch {
+      // ignore
+    }
 
-    return json({ updated })
+    return json({ updated, traceId })
   } catch (e) {
     console.error(JSON.stringify({ event: 'serve_error', traceId, error: e instanceof Error ? e.message : 'unknown' }))
-    return json({ error: 'Erreur serveur' }, 500)
+    return err('Erreur serveur', 'SERVER_ERROR', traceId, 500)
   }
 })
 

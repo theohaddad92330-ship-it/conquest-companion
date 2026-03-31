@@ -48,6 +48,7 @@ export default function KnowledgeBase() {
       title: title.trim(),
       content: content.trim(),
       category,
+      user_id: (await supabase.auth.getUser()).data.user?.id,
       metadata: { added_manually: true },
     });
     setSaving(false);
@@ -62,7 +63,9 @@ export default function KnowledgeBase() {
   };
 
   const handleDelete = async (id: string, docTitle: string) => {
-    const { error } = await supabase.from("rag_documents").delete().eq("id", id);
+    const userId = (await supabase.auth.getUser()).data.user?.id;
+    const q = supabase.from("rag_documents").delete().eq("id", id);
+    const { error } = userId ? await q.eq("user_id", userId) : await q;
     if (!error) {
       toast({ title: "Supprimé", description: `"${docTitle}" a été supprimé.` });
       queryClient.invalidateQueries({ queryKey: ["rag_documents"] });

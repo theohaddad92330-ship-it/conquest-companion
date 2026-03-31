@@ -1,6 +1,6 @@
 -- Bellum AI core tables (accounts, contacts, angles, plans, credits)
 
-CREATE TABLE public.accounts (
+CREATE TABLE IF NOT EXISTS public.accounts (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   company_name TEXT NOT NULL,
@@ -47,7 +47,7 @@ BEFORE UPDATE ON public.accounts
 FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 
-CREATE TABLE public.contacts (
+CREATE TABLE IF NOT EXISTS public.contacts (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   account_id UUID NOT NULL REFERENCES public.accounts(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -95,7 +95,7 @@ BEFORE UPDATE ON public.contacts
 FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 
-CREATE TABLE public.attack_angles (
+CREATE TABLE IF NOT EXISTS public.attack_angles (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   account_id UUID NOT NULL REFERENCES public.accounts(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -115,7 +115,7 @@ CREATE POLICY "Users can insert their own angles" ON public.attack_angles FOR IN
 CREATE POLICY "Users can delete their own angles" ON public.attack_angles FOR DELETE USING (auth.uid() = user_id);
 
 
-CREATE TABLE public.action_plans (
+CREATE TABLE IF NOT EXISTS public.action_plans (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   account_id UUID NOT NULL REFERENCES public.accounts(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -140,7 +140,7 @@ BEFORE UPDATE ON public.action_plans
 FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 
-CREATE TABLE public.user_credits (
+CREATE TABLE IF NOT EXISTS public.user_credits (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
   

@@ -132,13 +132,18 @@ export default function Contacts() {
   };
 
   const handleDeleteAll = () => {
-    setContacts([]);
-    setImportResult(null);
-    toast({ title: "Contacts supprimés", description: "Tous les contacts importés ont été supprimés." });
+    toast({
+      title: "Non disponible",
+      description: "La suppression en masse n'est pas disponible tant que l'import CRM n'est pas branché côté base.",
+      variant: "destructive",
+    });
   };
 
   const handleExportCSV = () => {
-    toast({ title: "Export lancé", description: "Votre fichier CSV enrichi est en cours de téléchargement." });
+    toast({
+      title: "Bientôt disponible",
+      description: "L'export enrichi sera activé avec l'import CRM (pipeline CSV réel).",
+    });
   };
 
   // Filtered contacts
@@ -167,18 +172,18 @@ export default function Contacts() {
               Mes Contacts
             </h1>
             <p className="text-sm text-foreground/50 mt-1">
-              Importez vos contacts existants pour enrichir vos analyses de comptes
+              Vos contacts détectés pendant les analyses (générés à partir des sources).
             </p>
           </div>
           {hasContacts && (
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={handleExportCSV} className="gap-1.5">
+              <Button variant="outline" size="sm" onClick={handleExportCSV} className="gap-1.5" disabled>
                 <Download className="h-3.5 w-3.5" />
                 Exporter enrichi
               </Button>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-1.5 text-destructive hover:text-destructive">
+                  <Button variant="outline" size="sm" className="gap-1.5 text-destructive hover:text-destructive" disabled>
                     <Trash2 className="h-3.5 w-3.5" />
                     Tout supprimer
                   </Button>
@@ -187,7 +192,7 @@ export default function Contacts() {
                   <AlertDialogHeader>
                     <AlertDialogTitle>Supprimer tous les contacts ?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      Cette action supprimera tous vos contacts importés. Les analyses de comptes déjà effectuées ne seront pas affectées.
+                      Fonction désactivée pour l'instant. Les contacts affichés ici proviennent des analyses.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
@@ -325,7 +330,7 @@ export default function Contacts() {
           <motion.div variants={fadeUp} className="space-y-4">
             <div className="rounded-lg border border-border bg-muted/30 px-4 py-2.5 flex items-center gap-2">
               <AlertCircle className="h-4 w-4 text-muted-foreground shrink-0" />
-              <p className="text-xs text-muted-foreground">Liste des contacts détectés dans vos analyses. L'import CSV (CRM) sera branché ensuite.</p>
+              <p className="text-xs text-muted-foreground">Liste des contacts détectés dans vos analyses. L'import CSV (CRM) sera branché ensuite (pipeline réel).</p>
             </div>
             {/* Filters bar */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">

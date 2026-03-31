@@ -1,73 +1,42 @@
-# Welcome to your Lovable project
+# Bellum AI — Conquest Companion
 
-## Project info
+## Stack
+- **Frontend**: Vite + React + TypeScript + shadcn/ui + Tailwind
+- **Backend**: Supabase (Auth, Postgres, RLS, Edge Functions)
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Local dev
 
-## How can I edit this code?
+### Prérequis
+- Node.js + npm
+- Accès au projet Supabase (variables `.env`)
 
-There are several ways of editing your application.
+### Démarrer
 
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+```bash
+npm install
+npm run dev -- --host 127.0.0.1 --port 4173
 ```
 
-**Edit a file directly in GitHub**
+URL locale: `http://127.0.0.1:4173`
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+### Lien HTTPS (tests auth / navigation privée)
+Un `https://...` vers `localhost` nécessite un tunnel (ou un proxy TLS local).
 
-**Use GitHub Codespaces**
+Tunnel rapide (URL HTTPS affichée dans la sortie):
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+```bash
+npx --yes cloudflared@latest tunnel --url http://127.0.0.1:4173
+```
 
-## What technologies are used for this project?
+## Supabase Edge Functions
+- `analyze-account`
+- `search-companies`
+- `generate-messages`
 
-This project is built with:
+Déployer:
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+```bash
+npx supabase functions deploy analyze-account
+npx supabase functions deploy search-companies
+npx supabase functions deploy generate-messages
+```

@@ -24,7 +24,7 @@ import { AccountCard } from "@/components/AccountCard";
 import { SearchCorrectionBanner } from "@/components/SearchCorrectionBanner";
 import { useToast } from "@/hooks/use-toast";
 import { useAnalysisPolling } from "@/hooks/useAnalysisPolling";
-import { useCompanySearch } from "@/hooks/useCompanySearch";
+import { CompanySuggestion, useCompanySearch } from "@/hooks/useCompanySearch";
 import { useCancelAnalysis } from "@/hooks/useAccounts";
 
 interface Step {
@@ -131,6 +131,7 @@ export default function SearchPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [query, setQuery] = useState(searchParams.get("q") || "");
+  const [selectedSuggestion, setSelectedSuggestion] = useState<CompanySuggestion | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const inputWrapperRef = useRef<HTMLDivElement>(null);
@@ -194,22 +195,41 @@ export default function SearchPage() {
   const handleSearch = useCallback(async () => {
     const trimmed = query.trim();
     if (!trimmed) return;
+    if (suggestions.length > 0 && !selectedSuggestion) {
+      toast({
+        title: "Sélection requise",
+        description: "Choisissez l'entreprise dans la liste pour éviter les homonymes.",
+      });
+      return;
+    }
     clearSuggestions();
     setBannerDismissed(false);
-    await startAnalysis(trimmed);
-  }, [query, startAnalysis, clearSuggestions]);
+    await startAnalysis(trimmed, undefined, {
+      siren: selectedSuggestion?.siren ?? undefined,
+      selectedName: selectedSuggestion?.name ?? undefined,
+    });
+  }, [query, suggestions.length, selectedSuggestion, startAnalysis, clearSuggestions, toast]);
 
   const handleQueryChange = useCallback((value: string) => {
     setQuery(value);
+    setSelectedSuggestion(null);
     searchSuggestions(value);
   }, [searchSuggestions]);
 
-  const handleSelectSuggestion = useCallback((name: string) => {
+  const handleSelectSuggestion = useCallback((suggestionOrName: CompanySuggestion | string) => {
+    const selected = typeof suggestionOrName === "string"
+      ? suggestions.find((s) => s.name === suggestionOrName) ?? null
+      : suggestionOrName;
+    const name = typeof suggestionOrName === "string" ? suggestionOrName : suggestionOrName.name;
     setQuery(name);
+    setSelectedSuggestion(selected);
     clearSuggestions();
     setBannerDismissed(false);
-    startAnalysis(name);
-  }, [startAnalysis, clearSuggestions]);
+    startAnalysis(name, undefined, {
+      siren: selected?.siren ?? undefined,
+      selectedName: selected?.name ?? undefined,
+    });
+  }, [startAnalysis, clearSuggestions, suggestions]);
 
   const showCorrectionBanner = analysis.originalQuery && (analysis.correctedName || analysis.notFound) && !bannerDismissed;
 
@@ -288,7 +308,7 @@ export default function SearchPage() {
                       key={s.siren || s.name}
                       type="button"
                       className="w-full text-left px-4 py-3 hover:bg-muted/50 flex flex-col gap-0.5 border-b border-border last:border-0"
-                      onClick={() => handleSelectSuggestion(s.name)}
+                      onClick={() => handleSelectSuggestion(s)}
                     >
                       <span className="font-medium text-sm text-foreground">{s.name}</span>
                       {(s.city || s.sector) && (

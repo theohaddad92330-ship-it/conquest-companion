@@ -28,6 +28,7 @@ import { FranceSitesMap } from "@/components/FranceSitesMap";
 import { getScoringIntro, getOuvrirCompteTip } from "@/lib/personalized-copy";
 import { supabase } from "@/integrations/supabase/client";
 import { authedPostJson } from "@/lib/supabase-http";
+import { useQueryClient } from "@tanstack/react-query";
 
 const fadeUp = { hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } };
 
@@ -1186,6 +1187,7 @@ function TabMessages({ contacts, accountId }: { contacts: Contact[]; accountId: 
   const [filter, setFilter] = useState<string>("all");
   const { toast } = useToast();
   const [isGenerating, setIsGenerating] = useState(false);
+  const queryClient = useQueryClient();
 
   const messageGroups = useMemo(() => {
     return contacts.map((c) => {
@@ -1241,6 +1243,8 @@ function TabMessages({ contacts, accountId }: { contacts: Contact[]; accountId: 
                     const res = await invokeGenerateMessages(accountId, 20);
                     if (res.error) throw new Error(res.error);
                     toast({ title: "Génération lancée", description: `${res.updated ?? 0} contact(s) mis à jour.` });
+                    // Forcer le refresh: les contacts existent déjà mais leurs messages viennent d'être enrichis.
+                    queryClient.invalidateQueries({ queryKey: ["contacts", accountId] });
                   } catch (e) {
                     toast({ title: "Erreur", description: e instanceof Error ? e.message : "Impossible de générer les messages.", variant: "destructive" });
                   } finally {

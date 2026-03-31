@@ -74,9 +74,11 @@ export default function Login() {
     try {
       const { error } = await withTimeout(signIn(email, password), AUTH_TIMEOUT_MS, "Connexion");
       if (error) {
-        const msg = (error as Error).message?.includes("Invalid login")
-          ? "Email ou mot de passe incorrect."
-          : (error as Error).message || "Une erreur est survenue.";
+        const raw = (error as any)?.message ? String((error as any).message) : String(error);
+        const msg =
+          /invalid login|invalid credentials|Invalid login credentials/i.test(raw)
+            ? "Email ou mot de passe incorrect."
+            : raw || "Une erreur est survenue.";
         toast({ title: "Erreur de connexion", description: msg, variant: "destructive" });
       }
     } catch (err) {

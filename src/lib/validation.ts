@@ -34,6 +34,17 @@ export const analyzeAccountSchema = z.object({
     .max(MAX_USER_CONTEXT, 'Contexte trop long')
     .optional()
     .nullable(),
+  companySiren: z
+    .string()
+    .regex(/^\d{9}$/, 'SIREN invalide')
+    .optional()
+    .nullable(),
+  selectedCompanyName: z
+    .string()
+    .trim()
+    .max(MAX_COMPANY_NAME, 'Nom trop long')
+    .optional()
+    .nullable(),
 })
 
 export type LoginInput = z.infer<typeof loginSchema>

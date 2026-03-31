@@ -10,6 +10,44 @@ function publishableKey() {
   return String(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "").trim();
 }
 
+function extractErrorMessage(parsed: any, fallbackText: string, status: number) {
+  // Backward compatible:
+  // - { error: "..." }
+  // - { error: { message, code, traceId } }
+  // - { message: "..." }
+  const traceId =
+    typeof parsed?.traceId === "string"
+      ? parsed.traceId
+      : typeof parsed?.error?.traceId === "string"
+        ? parsed.error.traceId
+        : null;
+  const code =
+    typeof parsed?.code === "string"
+      ? parsed.code
+      : typeof parsed?.error?.code === "string"
+        ? parsed.error.code
+        : null;
+  const msg =
+    typeof parsed?.error === "string"
+      ? parsed.error
+      : typeof parsed?.error?.message === "string"
+        ? parsed.error.message
+        : typeof parsed?.message === "string"
+          ? parsed.message
+          : fallbackText;
+
+  // In dev, keep traceId visible for debugging.
+  if (import.meta.env.DEV && traceId) {
+    const suffix = code ? ` (${code}, trace ${traceId})` : ` (trace ${traceId})`;
+    return `${msg}${suffix}`;
+  }
+  // In prod, keep message clean; optionally keep code if present.
+  if (!import.meta.env.DEV && code && status >= 500) {
+    return `${msg} (${code})`;
+  }
+  return msg;
+}
+
 export async function authedPostJson<TResponse extends JsonValue>(
   functionName: string,
   body: Record<string, unknown>
@@ -50,7 +88,7 @@ export async function authedPostJson<TResponse extends JsonValue>(
     if (!res.ok) {
       return {
         ok: false,
-        error: parsed?.error || text.slice(0, 300) || `Erreur ${res.status} ${res.statusText}`,
+        error: extractErrorMessage(parsed, text.slice(0, 300) || `Erreur ${res.status} ${res.statusText}`, res.status),
         status: res.status,
       };
     }

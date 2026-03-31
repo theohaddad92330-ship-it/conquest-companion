@@ -35,32 +35,8 @@ export function useAccounts(options?: { includeArchived?: boolean }) {
       if (!includeArchived) {
         list = list.filter((a) => a.archived_at == null);
       }
-      if (list.length === 0) return list;
-      const accountIds = list.map((a) => a.id);
-      const { data: contactRows } = await supabase
-        .from('contacts')
-        // On ne récupère que le strict nécessaire pour calculer
-        // - contact_count
-        // - message_count (messages générés à la demande)
-        .select('account_id,email_message,linkedin_message,followup_message')
-        .in('account_id', accountIds);
-      const countByAccount: Record<string, number> = {};
-      const messagesByAccount: Record<string, number> = {};
-      for (const row of contactRows || []) {
-        const r = row as { account_id: string; email_message?: any; linkedin_message?: string | null; followup_message?: any };
-        const id = r.account_id;
-        countByAccount[id] = (countByAccount[id] || 0) + 1;
-        const msgCount =
-          (r.email_message?.body ? 1 : 0) +
-          (r.linkedin_message ? 1 : 0) +
-          (r.followup_message?.body ? 1 : 0);
-        if (msgCount > 0) messagesByAccount[id] = (messagesByAccount[id] || 0) + msgCount;
-      }
-      return list.map((a) => ({
-        ...a,
-        contact_count: countByAccount[a.id] ?? 0,
-        message_count: messagesByAccount[a.id] ?? 0,
-      }));
+      // Scalabilité: ces stats sont maintenues côté DB (colonnes accounts.contact_count / accounts.message_count)
+      return list;
     },
     enabled: !!user,
   });
@@ -115,7 +91,7 @@ export function useAccount(id: string | undefined, options?: { refetchWhenAnalyz
 }
 
 export function useAccountContacts(accountId: string | undefined) {
-  const { data: contacts = [], isLoading } = useQuery({
+  const { data: contacts = [], isLoading, refetch } = useQuery({
     queryKey: ['contacts', accountId],
     queryFn: async () => {
       if (!accountId) return [];
@@ -128,12 +104,16 @@ export function useAccountContacts(accountId: string | undefined) {
       return data || [];
     },
     enabled: !!accountId,
+    refetchInterval: (query) => {
+      const list = query.state.data;
+      return Array.isArray(list) && list.length === 0 ? 3000 : false;
+    },
   });
-  return { contacts, isLoading };
+  return { contacts, isLoading, refetch };
 }
 
 export function useAccountAngles(accountId: string | undefined) {
-  const { data: angles = [], isLoading } = useQuery({
+  const { data: angles = [], isLoading, refetch } = useQuery({
     queryKey: ['angles', accountId],
     queryFn: async () => {
       if (!accountId) return [];
@@ -146,12 +126,16 @@ export function useAccountAngles(accountId: string | undefined) {
       return data || [];
     },
     enabled: !!accountId,
+    refetchInterval: (query) => {
+      const list = query.state.data;
+      return Array.isArray(list) && list.length === 0 ? 3000 : false;
+    },
   });
-  return { angles, isLoading };
+  return { angles, isLoading, refetch };
 }
 
 export function useAccountActionPlan(accountId: string | undefined) {
-  const { data: actionPlan, isLoading } = useQuery({
+  const { data: actionPlan, isLoading, refetch } = useQuery({
     queryKey: ['action_plan', accountId],
     queryFn: async () => {
       if (!accountId) return null;
@@ -164,6 +148,9 @@ export function useAccountActionPlan(accountId: string | undefined) {
       return data;
     },
     enabled: !!accountId,
+    refetchInterval: (query) => {
+      return query.state.data == null ? 3000 : false;
+    },
   });
-  return { actionPlan, isLoading };
+  return { actionPlan, isLoading, refetch };
 }

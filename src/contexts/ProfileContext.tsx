@@ -27,11 +27,13 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [lastError, setLastError] = useState<string | null>(null);
 
   const fetchProfile = useCallback(async () => {
     if (!user) {
       setProfile(null);
       setLoading(false);
+      setLastError(null);
       return;
     }
     try {
@@ -43,28 +45,23 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
 
       if (!error && data) {
         setProfile(data as unknown as Profile);
+        setLastError(null);
       } else {
-        console.warn("[ProfileContext] Profil inexistant, création en cours...");
-        const { data: newProfile, error: insertError } = await supabase
-          .from("profiles")
-          .insert({
-            user_id: user.id,
-            full_name: user.user_metadata?.full_name || user.user_metadata?.name || "",
-            onboarding_completed: false,
-          })
-          .select()
-          .single();
-
-        if (!insertError && newProfile) {
-          setProfile(newProfile as unknown as Profile);
+        // Ne pas auto-créer ici: la DB a déjà un trigger de création au signup.
+        // Si le profil est absent, c'est soit un utilisateur legacy, soit un souci RLS/migration.
+        // Laisser la UI (onboarding) déclencher un upsert explicite si nécessaire.
+        if (error) {
+          console.warn("[ProfileContext] fetch profile error:", error.message);
+          setLastError(error.message);
         } else {
-          console.error("[ProfileContext] Échec création profil:", insertError);
-          setProfile(null);
+          setLastError("Profil introuvable");
         }
+        setProfile(null);
       }
     } catch (err) {
       console.error("[ProfileContext] fetchProfile error:", err);
       setProfile(null);
+      setLastError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
@@ -84,36 +81,21 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       if (!user) return { error: new Error("Not authenticated"), data: null };
 
       try {
+        // UPSERT explicite: garantit la création pour les users legacy
         const { data, error } = await supabase
           .from("profiles")
-          .update(updates as any)
-          .eq("user_id", user.id)
+          .upsert({
+            user_id: user.id,
+            full_name: user.user_metadata?.full_name || user.user_metadata?.name || "",
+            onboarding_completed: false,
+            ...updates,
+          } as any, { onConflict: "user_id" })
           .select()
           .single();
 
-        if (error) {
-          console.warn("[ProfileContext] UPDATE échoué, tentative UPSERT:", error.message);
-          const { data: upsertData, error: upsertError } = await supabase
-            .from("profiles")
-            .upsert({
-              user_id: user.id,
-              full_name: user.user_metadata?.full_name || "",
-              onboarding_completed: false,
-              ...updates,
-            } as any)
-            .select()
-            .single();
-
-          if (!upsertError && upsertData) {
-            setProfile(upsertData as unknown as Profile);
-            return { error: null, data: upsertData as unknown as Profile };
-          }
-          console.error("[ProfileContext] UPSERT échoué:", upsertError);
-          return { error: upsertError, data: null };
-        }
-
         if (data) {
           setProfile(data as unknown as Profile);
+          setLastError(null);
           return { error: null, data: data as unknown as Profile };
         }
         return { error: null, data: null };
