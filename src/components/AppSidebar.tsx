@@ -138,7 +138,7 @@ export function AppSidebar() {
 
         {/* User info */}
         {!collapsed && displayName && (
-          <div className="rounded-lg border border-border bg-card px-3 py-2.5 flex items-center gap-2.5">
+          <div className="glass-card px-3 py-2.5 flex items-center gap-2.5">
             <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted">
               <span className="text-[10px] font-semibold text-muted-foreground">{initials}</span>
             </div>
@@ -151,7 +151,7 @@ export function AppSidebar() {
 
         {/* Credits */}
         {!collapsed && (
-          <div className="rounded-lg border border-border bg-card px-3 py-2.5 space-y-2">
+          <div className="glass-card px-3 py-2.5 space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5">
                 <Coins className="h-3.5 w-3.5 text-muted-foreground" />
