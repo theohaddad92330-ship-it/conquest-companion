@@ -69,7 +69,7 @@ export default function Pricing() {
               { name: "Scale", price: "Sur devis", period: "", popular: false },
             ].map((plan) => (
               <motion.div key={plan.name} variants={fadeUp}>
-                <Card className={`h-full relative ${plan.popular ? "border-primary bellum-glow" : "border-border"}`}>
+                <Card className={`h-full relative glass-card ${plan.popular ? "border-primary bellum-glow" : ""}`}>
                   {plan.popular && <div className="absolute -top-3 left-1/2 -translate-x-1/2"><Badge className="bg-primary text-primary-foreground">Le plus choisi</Badge></div>}
                   <CardContent className="p-6 text-center space-y-4">
                     <h3 className="font-display text-xl font-semibold">{plan.name}</h3>
@@ -84,7 +84,7 @@ export default function Pricing() {
           </motion.div>
 
           {/* Feature comparison table */}
-          <div className="rounded-lg border border-border bg-card overflow-x-auto">
+          <div className="glass-card overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border">
@@ -96,7 +96,7 @@ export default function Pricing() {
               </thead>
               <tbody>
                 {features.map((f, i) => (
-                  <tr key={f.name} className={`border-b border-border last:border-0 ${i % 2 === 0 ? "" : "bg-secondary/30"}`}>
+                  <tr key={f.name} className={`border-b border-border/50 last:border-0 ${i % 2 === 0 ? "" : "bg-muted/20"}`}>
                     <td className="p-4 text-foreground/60">{f.name}</td>
                     <td className="p-4 text-center"><CellValue value={f.starter} /></td>
                     <td className="p-4 text-center"><CellValue value={f.pro} /></td>
@@ -112,7 +112,7 @@ export default function Pricing() {
             <h2 className="font-display text-2xl font-bold text-center mb-8">Questions fréquentes</h2>
             <div className="space-y-2">
               {faqs.map((faq, i) => (
-                <div key={i} className="rounded-lg border border-border bg-card">
+                <div key={i} className="glass-card">
                   <button onClick={() => setOpenFaq(openFaq === i ? null : i)} className="w-full flex items-center justify-between p-4 text-left">
                     <span className="font-medium text-sm">{faq.q}</span>
                     <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${openFaq === i ? "rotate-180" : ""}`} />
@@ -131,7 +131,7 @@ export default function Pricing() {
         </div>
       </div>
 
-      <footer className="border-t border-border py-8 px-6 text-center text-sm text-foreground/40">
+      <footer className="border-t border-border/50 py-8 px-6 text-center text-sm text-muted-foreground/40">
         © 2026 Bellum AI. Tous droits réservés.
       </footer>
     </div>

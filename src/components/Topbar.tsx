@@ -49,7 +49,7 @@ export function Topbar() {
   };
 
   return (
-    <header className="h-14 flex items-center justify-between border-b border-border px-4 shrink-0 bg-background">
+    <header className="h-14 flex items-center justify-between border-b border-border/50 px-4 shrink-0 glass-navbar">
       <div className="flex items-center gap-3">
         <SidebarTrigger className="text-muted-foreground hover:text-foreground" />
         <nav className="flex items-center gap-1.5 text-sm">
@@ -66,7 +66,7 @@ export function Topbar() {
       </div>
 
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5">
+        <div className="flex items-center gap-1.5 rounded-md glass-badge px-2.5 py-1.5">
           <Coins className="h-3.5 w-3.5 text-primary" />
           <span className="text-xs font-mono font-semibold text-foreground">{remaining}</span>
           <span className="text-xs text-muted-foreground">crédits</span>

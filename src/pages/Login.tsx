@@ -106,7 +106,7 @@ export default function Login() {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-6">
-      <Card className="w-full max-w-sm border-border">
+      <Card className="w-full max-w-sm glass-card">
         <CardContent className="p-8 space-y-6">
           <div className="text-center space-y-2">
             <Link to="/" className="inline-flex items-center gap-2 mb-4">

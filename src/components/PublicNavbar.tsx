@@ -14,7 +14,7 @@ export function PublicNavbar() {
   const { pathname } = useLocation();
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
+    <nav className="fixed top-0 left-0 right-0 z-50 glass-navbar">
       <div className="mx-auto max-w-6xl flex items-center justify-between px-6 h-16">
         <Link to="/" className="flex items-center gap-2">
           <BellumLogo size={32} className="rounded-lg" />
@@ -54,7 +54,7 @@ export function PublicNavbar() {
       </div>
 
       {open && (
-        <div className="md:hidden border-t border-border bg-background px-6 py-4 space-y-3">
+        <div className="md:hidden border-t border-border/20 glass px-6 py-4 space-y-3">
           {links.map((l) => (
             <Link
               key={l.to}
