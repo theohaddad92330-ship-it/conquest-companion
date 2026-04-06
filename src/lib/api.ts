@@ -12,7 +12,7 @@ export async function analyzeAccount(companyName: string, userContext?: string) 
     companyName: parsed.data.companyName,
     userContext: parsed.data.userContext ?? undefined,
   });
-  if (!res.ok) throw new Error(res.error);
+  if (!res.ok) throw new Error((res as any).error);
   if (res.data?.error) throw new Error(res.data.error);
   return res.data;
 }

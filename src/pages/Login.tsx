@@ -42,15 +42,16 @@ export default function Login() {
     let cancelled = false;
     (async () => {
       try {
-        const { data } = await withTimeout(
+        const result = await withTimeout(
           supabase
             .from("profiles")
             .select("onboarding_completed")
             .eq("user_id", user.id)
-            .maybeSingle(),
+            .maybeSingle() as unknown as Promise<{ data: { onboarding_completed: boolean } | null; error: any }>,
           AUTH_TIMEOUT_MS,
           "Chargement du profil"
         );
+        const data = (result as any)?.data;
         if (cancelled) return;
         if (data?.onboarding_completed === true) navigate("/dashboard", { replace: true });
         else navigate("/welcome", { replace: true });

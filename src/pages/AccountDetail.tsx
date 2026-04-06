@@ -1178,7 +1178,7 @@ function TabPlan({ angles, actionPlan }: { angles: AttackAngle[]; actionPlan: Ac
 
 async function invokeGenerateMessages(accountId: string, limit = 20): Promise<{ updated?: number; error?: string }> {
   const res = await authedPostJson<any>("generate-messages", { accountId, limit });
-  if (!res.ok) return { error: res.error };
+  if (!res.ok) return { error: (res as any).error };
   if (res.data?.error) return { error: res.data.error };
   return { updated: res.data?.updated ?? 0 };
 }

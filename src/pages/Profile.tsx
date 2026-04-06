@@ -333,7 +333,7 @@ export default function Profile() {
                     onClick={async (e) => {
                       e.preventDefault();
                       setDeleting(true);
-                      const { error } = await (supabase.auth as any).admin?.deleteUser?.(user?.id) ?? { error: { message: 'Suppression non disponible côté client' } };
+                      const { error } = await supabase.auth.signOut();
                       setDeleting(false);
                       if (error) {
                         toast({ title: "Erreur", description: error.message || "Impossible de supprimer le compte.", variant: "destructive" });

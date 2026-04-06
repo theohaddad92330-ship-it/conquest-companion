@@ -72,18 +72,12 @@ const Index = () => {
             </div>
             <Button
               onClick={handleSearch}
-              disabled={!query.trim() || analysis.status === "loading"}
+              disabled={!query.trim()}
               size="lg"
               className="h-12 px-6 font-semibold"
             >
-              {analysis.status === "loading" ? (
-                <span className="flex items-center gap-2">
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
-                  Analyse...
-                </span>
-              ) : (
-                "Analyser"
-              )}
+              Analyser
+            </Button>
             </Button>
           </div>
         </div>

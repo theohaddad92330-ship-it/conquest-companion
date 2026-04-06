@@ -28,13 +28,13 @@ async function invokeAnalyzeAccount(
   userContext?: string,
   selection?: CompanySelectionPayload
 ): Promise<{ accountId?: string; error?: string }> {
-  const res = await authedPostJson<{ accountId?: string; error?: string }>("analyze-account", {
+  const res = await authedPostJson<any>("analyze-account", {
     companyName,
     userContext: userContext ?? undefined,
     companySiren: selection?.siren ?? undefined,
     selectedCompanyName: selection?.selectedName ?? undefined,
   });
-  if (!res.ok) return { error: res.error };
+  if (!res.ok) return { error: (res as any).error };
   if (res.data?.error) return { error: typeof res.data.error === 'string' ? res.data.error : 'Erreur serveur' };
   if (!res.data?.accountId) return { error: "Réponse serveur invalide (pas d'accountId)" };
   return { accountId: res.data.accountId };

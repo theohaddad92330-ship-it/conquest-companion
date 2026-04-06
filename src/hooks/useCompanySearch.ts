@@ -41,7 +41,7 @@ export function useCompanySearch() {
         });
         if (!res.ok) {
           setSuggestions([]);
-          setSearchError(res.error);
+          setSearchError((res as any).error);
         } else {
           setSuggestions(res.data?.results || []);
           setSearchWarning(res.data?.warning || null);
