@@ -29,12 +29,12 @@ export default function KnowledgeBase() {
   const { data: documents = [], isLoading } = useQuery({
     queryKey: ["rag_documents"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from("rag_documents")
         .select("id, title, category, created_at")
         .order("created_at", { ascending: false });
       if (error) throw error;
-      return data;
+      return data as { id: string; title: string; category: string; created_at: string }[];
     },
   });
 
@@ -44,7 +44,7 @@ export default function KnowledgeBase() {
       return;
     }
     setSaving(true);
-    const { error } = await supabase.from("rag_documents").insert({
+    const { error } = await (supabase as any).from("rag_documents").insert({
       title: title.trim(),
       content: content.trim(),
       category,
@@ -64,7 +64,7 @@ export default function KnowledgeBase() {
 
   const handleDelete = async (id: string, docTitle: string) => {
     const userId = (await supabase.auth.getUser()).data.user?.id;
-    const q = supabase.from("rag_documents").delete().eq("id", id);
+    const q = (supabase as any).from("rag_documents").delete().eq("id", id);
     const { error } = userId ? await q.eq("user_id", userId) : await q;
     if (!error) {
       toast({ title: "Supprimé", description: `"${docTitle}" a été supprimé.` });

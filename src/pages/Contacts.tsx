@@ -78,7 +78,7 @@ export default function Contacts() {
   const { isLoading } = useQuery({
     queryKey: ["contacts_all"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from("contacts")
         .select("*")
         .order("created_at", { ascending: false })

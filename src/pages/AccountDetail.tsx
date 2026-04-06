@@ -821,7 +821,7 @@ function TabEvaluation({ raw, account, onboardingData, firstName }: { raw: unkno
             <h2 className="font-display text-base font-semibold">Scoring business & décision</h2>
           </div>
           <p className="text-sm text-muted-foreground leading-relaxed">
-            {getScoringIntro(firstName ?? "", account.company_name ?? account.companyName ?? "", onboardingData ?? {})}
+            {getScoringIntro(firstName ?? "", account.company_name ?? (account as any).companyName ?? "", onboardingData ?? {})}
           </p>
         </CardContent>
       </Card>
@@ -1177,7 +1177,7 @@ function TabPlan({ angles, actionPlan }: { angles: AttackAngle[]; actionPlan: Ac
 }
 
 async function invokeGenerateMessages(accountId: string, limit = 20): Promise<{ updated?: number; error?: string }> {
-  const res = await authedPostJson<{ updated?: number; error?: string }>("generate-messages", { accountId, limit });
+  const res = await authedPostJson<any>("generate-messages", { accountId, limit });
   if (!res.ok) return { error: res.error };
   if (res.data?.error) return { error: res.data.error };
   return { updated: res.data?.updated ?? 0 };

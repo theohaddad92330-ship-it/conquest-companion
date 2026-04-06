@@ -3,12 +3,14 @@ import { supabase } from '@/integrations/supabase/client';
 import { UserCredits } from '@/types/account';
 import { useAuth } from '@/contexts/AuthContext';
 
+const db = supabase as any;
+
 export function useCredits() {
   const { user } = useAuth();
   const { data: credits, isLoading, refetch } = useQuery({
     queryKey: ['credits', user?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('user_credits')
         .select('*')
         .maybeSingle();
