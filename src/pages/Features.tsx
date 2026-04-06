@@ -32,7 +32,7 @@ export default function Features() {
         <div className="mx-auto max-w-5xl">
           <motion.div initial="hidden" animate="visible" variants={stagger} className="text-center mb-20">
             <motion.div variants={fadeUp}>
-              <Badge variant="secondary" className="mb-6 px-4 py-1.5 text-xs font-semibold border border-primary/20 bg-primary/5 text-primary">Fonctionnalités</Badge>
+              <Badge variant="secondary" className="mb-6 px-4 py-1.5 text-xs font-semibold glass-badge text-primary">Fonctionnalités</Badge>
             </motion.div>
             <motion.h1 variants={fadeUp} className="font-display text-3xl md:text-5xl font-bold mb-4">Ce que vous obtenez, compte par compte.</motion.h1>
             <motion.p variants={fadeUp} className="text-foreground/60 text-lg max-w-2xl mx-auto">Objectif : vous faire gagner du temps, enlever le stress, et vous aider à décider quoi faire maintenant.</motion.p>
@@ -41,7 +41,7 @@ export default function Features() {
           <motion.div initial="hidden" animate="visible" variants={stagger} className="space-y-8">
             {featureBlocks.map((feature, i) => (
               <motion.div key={feature.title} variants={fadeUp}>
-                <Card className="border-border bg-card hover:border-primary/20 transition-colors">
+                <Card className="glass-card card-hover">
                   <CardContent className="p-6 md:p-8">
                     <div className={`flex flex-col md:flex-row gap-6 ${i % 2 !== 0 ? "md:flex-row-reverse" : ""}`}>
                       <div className="flex-1 space-y-4">
@@ -61,7 +61,7 @@ export default function Features() {
                         </div>
                       </div>
                       <div className="md:w-64 flex items-center justify-center">
-                        <div className="w-full h-40 rounded-lg bg-secondary/50 border border-border flex items-center justify-center">
+                        <div className="w-full h-40 rounded-lg glass flex items-center justify-center">
                           <feature.icon className="h-12 w-12 text-primary/20" />
                         </div>
                       </div>
@@ -82,7 +82,7 @@ export default function Features() {
         </div>
       </div>
 
-      <footer className="border-t border-border py-8 px-6 text-center text-sm text-foreground/40">
+      <footer className="border-t border-border/50 py-8 px-6 text-center text-sm text-muted-foreground/40">
         © 2026 Bellum AI. Tous droits réservés.
       </footer>
     </div>
