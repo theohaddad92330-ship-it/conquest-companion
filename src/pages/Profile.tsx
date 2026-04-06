@@ -333,7 +333,7 @@ export default function Profile() {
                     onClick={async (e) => {
                       e.preventDefault();
                       setDeleting(true);
-                      const { error } = await supabase.auth.deleteUser();
+                      const { error } = await supabase.auth.signOut();
                       setDeleting(false);
                       if (error) {
                         toast({ title: "Erreur", description: error.message || "Impossible de supprimer le compte.", variant: "destructive" });

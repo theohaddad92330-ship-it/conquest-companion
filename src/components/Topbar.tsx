@@ -37,7 +37,7 @@ export function Topbar() {
   if (accountMatch) {
     const accountId = accountMatch[1];
     const account = accounts.find((a: any) => a.id === accountId);
-    currentLabel = account ? (account.company_name ?? account.companyName) : "Détail compte";
+    currentLabel = account ? (account.company_name ?? (account as any).companyName) : "Détail compte";
   }
 
   const displayName = profile?.full_name || user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split("@")[0] || "Utilisateur";

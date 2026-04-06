@@ -3,16 +3,17 @@ import { supabase } from '@/integrations/supabase/client';
 import { AccountAnalysis } from '@/types/account';
 import { useAuth } from '@/contexts/AuthContext';
 
+// Cast needed: accounts/contacts/attack_angles/action_plans tables exist in DB
+// but are not yet reflected in the auto-generated Supabase types.
+const db = supabase as any;
+
 /** Met à jour un compte "analyzing" en "error" (annulé) pour arrêter l'analyse. */
 export function useCancelAnalysis() {
   const queryClient = useQueryClient();
   return async (accountId: string) => {
-    const { error } = await supabase
+    const { error } = await db
       .from('accounts')
-      .update({
-        status: 'error',
-        error_message: "Annulé par l'utilisateur",
-      })
+      .update({ status: 'error', error_message: "Annulé par l'utilisateur" })
       .eq('id', accountId);
     if (error) throw error;
     queryClient.invalidateQueries({ queryKey: ['accounts'] });
@@ -26,7 +27,7 @@ export function useAccounts(options?: { includeArchived?: boolean }) {
   const { data: accounts = [], isLoading, error, refetch } = useQuery({
     queryKey: ['accounts', user?.id, includeArchived],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('accounts')
         .select('*')
         .order('created_at', { ascending: false });
@@ -35,7 +36,6 @@ export function useAccounts(options?: { includeArchived?: boolean }) {
       if (!includeArchived) {
         list = list.filter((a) => a.archived_at == null);
       }
-      // Scalabilité: ces stats sont maintenues côté DB (colonnes accounts.contact_count / accounts.message_count)
       return list;
     },
     enabled: !!user,
@@ -47,7 +47,7 @@ export function useAccounts(options?: { includeArchived?: boolean }) {
 export function useDeleteAccount() {
   const queryClient = useQueryClient();
   return async (accountId: string) => {
-    const { error } = await supabase.from('accounts').delete().eq('id', accountId);
+    const { error } = await db.from('accounts').delete().eq('id', accountId);
     if (error) throw error;
     queryClient.invalidateQueries({ queryKey: ['accounts'] });
     queryClient.invalidateQueries({ queryKey: ['account', accountId] });
@@ -58,7 +58,7 @@ export function useDeleteAccount() {
 export function useArchiveAccount() {
   const queryClient = useQueryClient();
   return async (accountId: string) => {
-    const { error } = await supabase
+    const { error } = await db
       .from('accounts')
       .update({ archived_at: new Date().toISOString() })
       .eq('id', accountId);
@@ -74,7 +74,7 @@ export function useAccount(id: string | undefined, options?: { refetchWhenAnalyz
     queryKey: ['account', id],
     queryFn: async () => {
       if (!id) return null;
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('accounts')
         .select('*')
         .eq('id', id)
@@ -84,7 +84,7 @@ export function useAccount(id: string | undefined, options?: { refetchWhenAnalyz
     },
     enabled: !!user && !!id,
     refetchInterval: options?.refetchWhenAnalyzing
-      ? (query) => (query.state.data as AccountAnalysis)?.status === 'analyzing' ? 2000 : false
+      ? (query: any) => (query.state.data as AccountAnalysis)?.status === 'analyzing' ? 2000 : false
       : undefined,
   });
   return { account, isLoading, error, refetch };
@@ -95,7 +95,7 @@ export function useAccountContacts(accountId: string | undefined) {
     queryKey: ['contacts', accountId],
     queryFn: async () => {
       if (!accountId) return [];
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('contacts')
         .select('*')
         .eq('account_id', accountId)
@@ -104,7 +104,7 @@ export function useAccountContacts(accountId: string | undefined) {
       return data || [];
     },
     enabled: !!accountId,
-    refetchInterval: (query) => {
+    refetchInterval: (query: any) => {
       const list = query.state.data;
       return Array.isArray(list) && list.length === 0 ? 3000 : false;
     },
@@ -117,7 +117,7 @@ export function useAccountAngles(accountId: string | undefined) {
     queryKey: ['angles', accountId],
     queryFn: async () => {
       if (!accountId) return [];
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('attack_angles')
         .select('*')
         .eq('account_id', accountId)
@@ -126,7 +126,7 @@ export function useAccountAngles(accountId: string | undefined) {
       return data || [];
     },
     enabled: !!accountId,
-    refetchInterval: (query) => {
+    refetchInterval: (query: any) => {
       const list = query.state.data;
       return Array.isArray(list) && list.length === 0 ? 3000 : false;
     },
@@ -139,7 +139,7 @@ export function useAccountActionPlan(accountId: string | undefined) {
     queryKey: ['action_plan', accountId],
     queryFn: async () => {
       if (!accountId) return null;
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('action_plans')
         .select('*')
         .eq('account_id', accountId)
@@ -148,7 +148,7 @@ export function useAccountActionPlan(accountId: string | undefined) {
       return data;
     },
     enabled: !!accountId,
-    refetchInterval: (query) => {
+    refetchInterval: (query: any) => {
       return query.state.data == null ? 3000 : false;
     },
   });

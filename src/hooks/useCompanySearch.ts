@@ -36,12 +36,12 @@ export function useCompanySearch() {
 
     debounceRef.current = setTimeout(async () => {
       try {
-        const res = await authedPostJson<{ results?: CompanySuggestion[]; error?: string; warning?: string }>('search-companies', {
+        const res = await authedPostJson<any>('search-companies', {
           query: parsed.data.query,
         });
         if (!res.ok) {
           setSuggestions([]);
-          setSearchError(res.error);
+          setSearchError((res as any).error);
         } else {
           setSuggestions(res.data?.results || []);
           setSearchWarning(res.data?.warning || null);
