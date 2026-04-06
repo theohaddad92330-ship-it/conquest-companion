@@ -78,7 +78,6 @@ const Index = () => {
             >
               Analyser
             </Button>
-            </Button>
           </div>
         </div>
       </div>
