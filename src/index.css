@@ -7,39 +7,38 @@
 
 @layer base {
   :root {
-    --background: 240 10% 96%;
-    --foreground: 240 10% 10%;
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 10%;
+    --background: 0 0% 100%;
+    --foreground: 0 0% 3%;
+    --card: 0 0% 97%;
+    --card-foreground: 0 0% 3%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 10%;
+    --popover-foreground: 0 0% 3%;
     --primary: 239 84% 67%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 240 10% 90%;
-    --secondary-foreground: 240 10% 10%;
-    --muted: 240 10% 92%;
-    --muted-foreground: 240 5% 46%;
+    --secondary: 0 0% 93%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 93%;
+    --muted-foreground: 0 0% 45%;
     --accent: 239 84% 67%;
     --accent-foreground: 0 0% 100%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
-    --border: 240 10% 87%;
-    --input: 240 10% 87%;
+    --border: 0 0% 89%;
+    --input: 0 0% 89%;
     --ring: 239 84% 67%;
-    --radius: 0.5rem;
-    --sidebar-background: 240 10% 94%;
-    --sidebar-foreground: 240 5% 30%;
+    --radius: 0.75rem;
+    --sidebar-background: 0 0% 97%;
+    --sidebar-foreground: 0 0% 30%;
     --sidebar-primary: 239 84% 67%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 239 84% 95%;
     --sidebar-accent-foreground: 239 84% 40%;
-    --sidebar-border: 240 10% 90%;
+    --sidebar-border: 0 0% 91%;
     --sidebar-ring: 239 84% 67%;
 
-    /* Bellum semantic tokens — light mode */
-    --bellum-bg-primary: 240 10% 96%;
-    --bellum-bg-secondary: 0 0% 100%;
-    --bellum-bg-tertiary: 240 10% 92%;
+    --bellum-bg-primary: 0 0% 100%;
+    --bellum-bg-secondary: 0 0% 97%;
+    --bellum-bg-tertiary: 0 0% 93%;
     --bellum-success: 142 71% 45%;
     --bellum-warning: 38 92% 50%;
     --bellum-danger: 0 84% 60%;
@@ -49,38 +48,37 @@
   }
 
   .dark {
-    --background: 240 20% 4%;
-    --foreground: 240 10% 96%;
-    --card: 240 17% 8%;
-    --card-foreground: 240 10% 96%;
-    --popover: 240 17% 8%;
-    --popover-foreground: 240 10% 96%;
+    --background: 0 0% 0%;
+    --foreground: 0 0% 95%;
+    --card: 0 0% 5%;
+    --card-foreground: 0 0% 95%;
+    --popover: 0 0% 5%;
+    --popover-foreground: 0 0% 95%;
     --primary: 239 84% 67%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 240 17% 10%;
-    --secondary-foreground: 240 10% 96%;
-    --muted: 240 17% 10%;
-    --muted-foreground: 240 10% 55%;
+    --secondary: 0 0% 9%;
+    --secondary-foreground: 0 0% 95%;
+    --muted: 0 0% 9%;
+    --muted-foreground: 0 0% 55%;
     --accent: 239 84% 67%;
     --accent-foreground: 0 0% 100%;
     --destructive: 0 63% 31%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 17% 14%;
-    --input: 240 17% 14%;
+    --border: 0 0% 12%;
+    --input: 0 0% 12%;
     --ring: 239 84% 67%;
-    --sidebar-background: 240 17% 6%;
-    --sidebar-foreground: 240 10% 75%;
+    --sidebar-background: 0 0% 3%;
+    --sidebar-foreground: 0 0% 65%;
     --sidebar-primary: 239 84% 67%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 239 84% 12%;
     --sidebar-accent-foreground: 239 84% 70%;
-    --sidebar-border: 240 17% 11%;
+    --sidebar-border: 0 0% 10%;
     --sidebar-ring: 239 84% 67%;
 
-    /* Bellum semantic tokens */
-    --bellum-bg-primary: 240 20% 4%;
-    --bellum-bg-secondary: 240 17% 8%;
-    --bellum-bg-tertiary: 240 15% 12%;
+    --bellum-bg-primary: 0 0% 0%;
+    --bellum-bg-secondary: 0 0% 5%;
+    --bellum-bg-tertiary: 0 0% 9%;
     --bellum-success: 142 71% 45%;
     --bellum-warning: 38 92% 50%;
     --bellum-danger: 0 84% 60%;
@@ -115,6 +113,7 @@
 }
 
 @layer utilities {
+  /* ── Glow effects ── */
   .bellum-glow {
     box-shadow: 0 0 20px -5px hsl(239 84% 67% / 0.3);
   }
@@ -123,11 +122,13 @@
     box-shadow: 0 0 30px -5px hsl(239 84% 67% / 0.5);
   }
 
+  /* ── Gradient text ── */
   .text-gradient-bellum {
     @apply bg-clip-text text-transparent;
     background-image: linear-gradient(135deg, hsl(239 84% 67%), hsl(239 84% 80%));
   }
 
+  /* ── Typography ── */
   .font-display {
     font-family: 'Clash Display', 'General Sans', system-ui, sans-serif;
   }
@@ -136,7 +137,37 @@
     font-family: 'General Sans', system-ui, sans-serif;
   }
 
-  /* Search bar glow on focus */
+  /* ── Glass morphism ── */
+  .glass {
+    background: hsl(0 0% 100% / 0.04);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid hsl(0 0% 100% / 0.06);
+  }
+
+  .glass-card {
+    background: hsl(0 0% 100% / 0.03);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid hsl(0 0% 100% / 0.06);
+    border-radius: 0.75rem;
+  }
+
+  .glass-navbar {
+    background: hsl(0 0% 0% / 0.6);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid hsl(0 0% 100% / 0.06);
+  }
+
+  .glass-badge {
+    background: hsl(0 0% 100% / 0.05);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid hsl(0 0% 100% / 0.08);
+  }
+
+  /* ── Search bar glow on focus ── */
   .search-glow:focus-within {
     box-shadow: 0 0 0 1px hsl(239 84% 67% / 0.4), 0 0 20px -4px hsl(239 84% 67% / 0.35);
     border-color: hsl(239 84% 67% / 0.5);
@@ -147,25 +178,26 @@
     transition: box-shadow 0.3s ease, border-color 0.3s ease;
   }
 
-  /* Card hover lift */
+  /* ── Card hover lift ── */
   .card-hover {
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
   }
   .card-hover:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px hsl(0 0% 0% / 0.06);
+    box-shadow: 0 8px 30px hsl(239 84% 67% / 0.06);
+    border-color: hsl(239 84% 67% / 0.2);
   }
 
-  /* Table row hover (neutre) */
+  /* ── Table row hover ── */
   .row-hover {
     transition: background-color 0.15s ease, box-shadow 0.15s ease;
   }
   .row-hover:hover {
-    background-color: hsl(var(--muted) / 0.5) !important;
+    background-color: hsl(0 0% 100% / 0.03) !important;
     box-shadow: inset 3px 0 0 hsl(var(--border));
   }
 
-  /* Badge pulse on high score */
+  /* ── Badge pulse on high score ── */
   .score-pulse {
     animation: score-ping 2s cubic-bezier(0, 0, 0.2, 1) 1;
   }
@@ -175,7 +207,7 @@
     100% { box-shadow: 0 0 0 0 hsl(142 71% 45% / 0); }
   }
 
-  /* Button press effect */
+  /* ── Button press effect ── */
   .btn-press:active {
     transform: scale(0.97);
   }
@@ -183,40 +215,40 @@
     transition: transform 0.1s ease;
   }
 
-  /* Sidebar link hover indicator (neutre) */
+  /* ── Sidebar link hover ── */
   .nav-glow:hover {
-    box-shadow: inset 3px 0 0 hsl(var(--border));
+    box-shadow: inset 3px 0 0 hsl(0 0% 100% / 0.1);
   }
 
-  /* Cartes neutres : fond card, bordure discrète, pas de violet */
+  /* ── Cards ── */
   .card-neutral {
     border-radius: 0.75rem;
     border: 1px solid hsl(var(--border));
     background: hsl(var(--card));
-    box-shadow: 0 1px 2px hsl(0 0% 0% / 0.03);
+    box-shadow: 0 1px 2px hsl(0 0% 0% / 0.1);
   }
 
-  /* Tableau : conteneur arrondi, hover neutre (gris) */
+  /* ── Premium table ── */
   .table-premium-wrapper {
     border-radius: 0.75rem;
     overflow: hidden;
     border: 1px solid hsl(var(--border));
     background: hsl(var(--card));
-    box-shadow: 0 1px 2px hsl(0 0% 0% / 0.03);
+    box-shadow: 0 1px 2px hsl(0 0% 0% / 0.1);
   }
   .table-premium-wrapper .table-row-hover:hover {
-    background: hsl(var(--muted) / 0.6);
+    background: hsl(0 0% 100% / 0.03);
     box-shadow: inset 3px 0 0 hsl(var(--border));
   }
 
-  /* Header compte : transparence légère neutre (pas de violet) */
+  /* ── Header premium ── */
   .header-premium {
-    background: linear-gradient(180deg, hsl(var(--muted) / 0.4) 0%, transparent 100%);
+    background: linear-gradient(180deg, hsl(0 0% 100% / 0.03) 0%, transparent 100%);
     border-radius: 0.75rem;
     padding: 1.25rem 1.5rem;
   }
 
-  /* Onglet actif : fond neutre (muted), pas de bandeau violet */
+  /* ── Active tab ── */
   .tabs-premium [data-state="active"] {
     border-radius: 0.5rem;
     background: hsl(var(--muted) / 0.8);
