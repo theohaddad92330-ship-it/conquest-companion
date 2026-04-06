@@ -8,54 +8,131 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PublicNavbar } from "@/components/PublicNavbar";
-import heroDashboard from "@/assets/hero-dashboard.png";
 import { BellumLogo } from "@/components/BellumLogo";
+import HeroVideoPlayer from "@/components/HeroVideoPlayer";
 
-const fadeUp = { hidden: { opacity: 0, y: 30 }, visible: { opacity: 1, y: 0 } };
+const fadeUp = {
+  hidden: { opacity: 0, y: 30 },
+  visible: (i: number) => ({
+    opacity: 1,
+    y: 0,
+    transition: { delay: i * 0.12, duration: 0.6, ease: [0.22, 1, 0.36, 1] },
+  }),
+};
+
 const stagger = { visible: { transition: { staggerChildren: 0.15 } } };
+const fadeUpSimple = { hidden: { opacity: 0, y: 30 }, visible: { opacity: 1, y: 0 } };
+
+const integrationBadges = [
+  { label: "LinkedIn", icon: "🔗" },
+  { label: "Pappers", icon: "📊" },
+  { label: "Apollo", icon: "🚀" },
+];
+
+const partnerLogos = [
+  "Capgemini", "Sopra Steria", "Atos", "Accenture", "CGI", "Alten",
+];
 
 export default function Landing() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <PublicNavbar />
 
-      {/* HERO */}
-      <section className="pt-32 pb-20 px-6">
-        <motion.div initial="hidden" animate="visible" variants={stagger} className="mx-auto max-w-3xl text-center">
-          <motion.div variants={fadeUp}>
-            <Badge variant="secondary" className="mb-6 px-4 py-1.5 text-xs font-semibold border border-primary/20 bg-primary/5 text-primary">
-              Prospection ESN — du concret
-            </Badge>
+      {/* HERO — Synapse-inspired with video */}
+      <section className="relative pt-32 pb-32 px-6 overflow-hidden min-h-[90vh] flex items-center">
+        {/* Video background */}
+        <HeroVideoPlayer />
+
+        {/* Content */}
+        <motion.div
+          initial="hidden"
+          animate="visible"
+          className="mx-auto max-w-4xl text-center relative z-10"
+        >
+          {/* Integration badges */}
+          <motion.div
+            custom={0}
+            variants={fadeUp}
+            className="flex items-center justify-center gap-3 mb-8"
+          >
+            {integrationBadges.map((b) => (
+              <div
+                key={b.label}
+                className="inline-flex items-center gap-2 rounded-full border border-border/50 bg-card/40 backdrop-blur-md px-4 py-2 text-xs font-medium text-muted-foreground"
+              >
+                <span>{b.icon}</span>
+                <span>Intégré avec {b.label}</span>
+              </div>
+            ))}
           </motion.div>
 
-          <motion.h1 variants={fadeUp} className="font-display text-4xl md:text-6xl font-bold leading-tight mb-6">
-            Gagnez du temps{" "}
-            <span className="text-gradient-bellum">sur chaque compte.</span>
+          {/* Headline */}
+          <motion.h1
+            custom={1}
+            variants={fadeUp}
+            className="font-display text-5xl md:text-7xl lg:text-[80px] font-bold leading-[0.95] tracking-tight mb-6"
+          >
+            Où l'intelligence
+            <br />
+            <span className="text-gradient-bellum">rencontre l'action.</span>
           </motion.h1>
 
-          <motion.p variants={fadeUp} className="text-lg text-foreground/70 max-w-xl mx-auto mb-10">
-            Vous tapez un nom. Bellum prépare la fiche, les signaux, les bons rôles à viser, et des messages prêts à envoyer.
-            <span className="text-primary font-medium"> Moins de recherches, plus d&apos;actions.</span>
+          {/* Subtitle */}
+          <motion.p
+            custom={2}
+            variants={fadeUp}
+            className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-10 leading-relaxed"
+          >
+            Analysez n'importe quel grand compte en quelques secondes.
+            <br className="hidden md:block" />
+            Bellum identifie les signaux, les décideurs et génère votre plan d'attaque.
           </motion.p>
 
-          <motion.div variants={fadeUp} className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Button size="lg" className="text-base px-8 h-12" asChild>
-              <Link to="/signup">Tester sur 3 comptes <ArrowRight className="h-4 w-4" /></Link>
+          {/* CTA Buttons */}
+          <motion.div
+            custom={3}
+            variants={fadeUp}
+            className="flex flex-col sm:flex-row items-center justify-center gap-4"
+          >
+            <Button
+              size="lg"
+              className="text-base px-8 h-13 bg-foreground text-background hover:bg-foreground/90 border border-border/50 font-semibold"
+              asChild
+            >
+              <Link to="/signup">
+                Commencer gratuitement
+              </Link>
             </Button>
-            <Button variant="outline" size="lg" className="text-base px-8 h-12" asChild>
-              <a href="#how-it-works">Voir le résultat</a>
+            <Button
+              variant="outline"
+              size="lg"
+              className="text-base px-8 h-13 backdrop-blur-md bg-card/30 border-border/50 hover:bg-card/50"
+              asChild
+            >
+              <a href="#how-it-works">
+                Voir comment ça marche
+              </a>
             </Button>
           </motion.div>
+        </motion.div>
 
-          {/* App screenshot */}
-          <motion.div variants={fadeUp} className="mt-16 rounded-xl border border-border bg-card p-2 bellum-glow">
-            <img
-              src={heroDashboard}
-              alt="Aperçu du dashboard Bellum AI — intelligence commerciale pour ESN"
-              className="rounded-lg w-full h-auto"
-              loading="lazy"
-            />
-          </motion.div>
+        {/* Logo marquee */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.8, duration: 0.6 }}
+          className="absolute bottom-8 left-0 right-0 z-10"
+        >
+          <div className="flex items-center justify-center gap-12 opacity-40">
+            {partnerLogos.map((name) => (
+              <span
+                key={name}
+                className="text-sm font-medium text-muted-foreground tracking-wide uppercase select-none"
+              >
+                {name}
+              </span>
+            ))}
+          </div>
         </motion.div>
       </section>
 
@@ -63,17 +140,17 @@ export default function Landing() {
       <section id="how-it-works" className="py-20 px-6 border-t border-border">
         <div className="mx-auto max-w-5xl">
           <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger} className="text-center mb-14">
-            <motion.h2 variants={fadeUp} className="font-display text-3xl md:text-4xl font-bold mb-4">Comment ça marche</motion.h2>
-            <motion.p variants={fadeUp} className="text-foreground/60 max-w-lg mx-auto">3 étapes. À la fin, vous savez qui contacter, quoi dire, et dans quel ordre.</motion.p>
+            <motion.h2 variants={fadeUpSimple} className="font-display text-3xl md:text-4xl font-bold mb-4">Comment ça marche</motion.h2>
+            <motion.p variants={fadeUpSimple} className="text-foreground/60 max-w-lg mx-auto">3 étapes. À la fin, vous savez qui contacter, quoi dire, et dans quel ordre.</motion.p>
           </motion.div>
 
           <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger} className="grid md:grid-cols-3 gap-6">
             {[
               { step: "1", icon: Search, title: "Vous tapez le nom du compte", desc: "Vous donnez une entreprise. Bellum rassemble le contexte utile : structure, filiales, signaux, projets, enjeux.", detail: "Ex : « Société Générale », « Airbus », « SNCF »" },
-              { step: "2", icon: Target, title: "Vous voyez où entrer", desc: "Bellum propose les rôles à viser, les portes d’entrée par entité, et les angles à tester selon votre ESN.", detail: "Score, signaux, enjeux, organigramme" },
-              { step: "3", icon: Download, title: "Vous passez à l’action", desc: "Vous récupérez une liste exploitable : qui contacter, quoi dire, et quand relancer. Export en CSV / Sheets.", detail: "CSV, Sheets, copier-coller" },
+              { step: "2", icon: Target, title: "Vous voyez où entrer", desc: "Bellum propose les rôles à viser, les portes d'entrée par entité, et les angles à tester selon votre ESN.", detail: "Score, signaux, enjeux, organigramme" },
+              { step: "3", icon: Download, title: "Vous passez à l'action", desc: "Vous récupérez une liste exploitable : qui contacter, quoi dire, et quand relancer. Export en CSV / Sheets.", detail: "CSV, Sheets, copier-coller" },
             ].map((item) => (
-              <motion.div key={item.step} variants={fadeUp}>
+              <motion.div key={item.step} variants={fadeUpSimple}>
                 <Card className="h-full border-border bg-card hover:border-primary/30 transition-colors">
                   <CardContent className="p-6 text-center space-y-4">
                     <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary font-display font-bold text-lg">{item.step}</div>
@@ -93,8 +170,8 @@ export default function Landing() {
       <section id="features" className="py-20 px-6 border-t border-border">
         <div className="mx-auto max-w-4xl">
           <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger} className="text-center mb-14">
-            <motion.h2 variants={fadeUp} className="font-display text-3xl md:text-4xl font-bold mb-4">Ce que vous gagnez à chaque connexion.</motion.h2>
-            <motion.p variants={fadeUp} className="text-foreground/60 max-w-lg mx-auto">Du recul pour décider, et des livrables prêts à utiliser.</motion.p>
+            <motion.h2 variants={fadeUpSimple} className="font-display text-3xl md:text-4xl font-bold mb-4">Ce que vous gagnez à chaque connexion.</motion.h2>
+            <motion.p variants={fadeUpSimple} className="text-foreground/60 max-w-lg mx-auto">Du recul pour décider, et des livrables prêts à utiliser.</motion.p>
           </motion.div>
 
           <motion.ul initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger} className="space-y-4 max-w-xl mx-auto">
@@ -102,19 +179,19 @@ export default function Landing() {
               "Moins de recherches : le contexte utile est déjà rassemblé",
               "Une liste de rôles à viser (décideur, champion, achats, opérationnel)",
               "Des signaux pour relancer au bon moment",
-              "Des angles d’approche reliés à vos offres ESN",
-              "Un plan d’action simple à suivre semaine par semaine",
+              "Des angles d'approche reliés à vos offres ESN",
+              "Un plan d'action simple à suivre semaine par semaine",
               "Des messages prêts à adapter et à envoyer",
               "Un export CSV / Sheets pour passer au CRM",
             ].map((item) => (
-              <motion.li key={item} variants={fadeUp} className="flex items-start gap-3">
+              <motion.li key={item} variants={fadeUpSimple} className="flex items-start gap-3">
                 <CheckCircle className="h-5 w-5 text-bellum-success shrink-0 mt-0.5" />
                 <span className="text-foreground/80">{item}</span>
               </motion.li>
             ))}
           </motion.ul>
 
-          <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} className="text-center mt-10 space-y-3">
+          <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUpSimple} className="text-center mt-10 space-y-3">
             <Button size="lg" asChild>
               <Link to="/signup">Tester sur 3 comptes <ArrowRight className="h-4 w-4" /></Link>
             </Button>
@@ -129,19 +206,19 @@ export default function Landing() {
       <section className="py-20 px-6 border-t border-border">
         <div className="mx-auto max-w-4xl">
           <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger}>
-            <motion.h2 variants={fadeUp} className="font-display text-3xl md:text-4xl font-bold mb-4 text-center">Conçu pour vendre des missions ESN.</motion.h2>
-            <motion.p variants={fadeUp} className="text-center text-foreground/60 mb-4 max-w-lg mx-auto">Vous n’avez pas besoin de “plus de données”. Vous avez besoin de savoir quoi faire, sans y passer la journée.</motion.p>
-            <motion.p variants={fadeUp} className="text-center text-foreground/50 text-sm mb-10 max-w-md mx-auto">Bellum utilise votre profil ESN (offres, secteurs, personas, zone) pour sortir des recommandations qui collent au terrain.</motion.p>
+            <motion.h2 variants={fadeUpSimple} className="font-display text-3xl md:text-4xl font-bold mb-4 text-center">Conçu pour vendre des missions ESN.</motion.h2>
+            <motion.p variants={fadeUpSimple} className="text-center text-foreground/60 mb-4 max-w-lg mx-auto">Vous n'avez pas besoin de "plus de données". Vous avez besoin de savoir quoi faire, sans y passer la journée.</motion.p>
+            <motion.p variants={fadeUpSimple} className="text-center text-foreground/50 text-sm mb-10 max-w-md mx-auto">Bellum utilise votre profil ESN (offres, secteurs, personas, zone) pour sortir des recommandations qui collent au terrain.</motion.p>
             <motion.div variants={stagger} className="grid md:grid-cols-2 gap-4 max-w-2xl mx-auto">
               {[
                 { icon: Layers, title: "Angles reliés à vos offres", desc: "Vous évitez les idées hors sujet. Vous gardez ce qui peut se vendre." },
                 { icon: Mail, title: "Messages utilisables", desc: "Une base claire par rôle. Vous adaptez et vous envoyez." },
                 { icon: Users, title: "Rôles à viser", desc: "Décideur, champion, achats, opérationnel : vous savez qui chercher." },
-                { icon: FileText, title: "Plan d’action simple", desc: "Une suite d’étapes pour avancer, sans vous disperser." },
+                { icon: FileText, title: "Plan d'action simple", desc: "Une suite d'étapes pour avancer, sans vous disperser." },
                 { icon: Shield, title: "Moins de bruit", desc: "Vous vous concentrez sur les comptes à ouvrir, pas sur ceux déjà gagnés." },
                 { icon: Clock, title: "Temps sauvé", desc: "Vous passez moins de temps à chercher, plus de temps à contacter." },
               ].map((item) => (
-                <motion.div key={item.title} variants={fadeUp} className="flex items-start gap-3 p-4 rounded-lg border border-border bg-card hover:border-primary/30 transition-colors">
+                <motion.div key={item.title} variants={fadeUpSimple} className="flex items-start gap-3 p-4 rounded-lg border border-border bg-card hover:border-primary/30 transition-colors">
                   <item.icon className="h-5 w-5 text-primary shrink-0 mt-0.5" />
                   <div>
                     <p className="text-sm font-semibold text-foreground mb-1">{item.title}</p>
@@ -158,7 +235,7 @@ export default function Landing() {
       <section className="py-20 px-6 border-t border-border">
         <div className="mx-auto max-w-5xl">
           <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger} className="text-center mb-14">
-            <motion.h2 variants={fadeUp} className="font-display text-3xl md:text-4xl font-bold mb-4">Tarifs simples</motion.h2>
+            <motion.h2 variants={fadeUpSimple} className="font-display text-3xl md:text-4xl font-bold mb-4">Tarifs simples</motion.h2>
           </motion.div>
 
           <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger} className="grid md:grid-cols-3 gap-6">
@@ -167,7 +244,7 @@ export default function Landing() {
               { name: "Pro", price: "249€", period: "/mois par user", accounts: "20 comptes/mois", cta: "Essayer", popular: true },
               { name: "Scale", price: "Sur devis", period: "", accounts: "Illimité + API", cta: "Contacter", popular: false },
             ].map((plan) => (
-              <motion.div key={plan.name} variants={fadeUp}>
+              <motion.div key={plan.name} variants={fadeUpSimple}>
                 <Card className={`h-full border-border bg-card relative ${plan.popular ? "border-primary bellum-glow" : ""}`}>
                   {plan.popular && <div className="absolute -top-3 left-1/2 -translate-x-1/2"><Badge className="bg-primary text-primary-foreground text-xs">Populaire</Badge></div>}
                   <CardContent className="p-6 text-center space-y-4">
@@ -196,7 +273,7 @@ export default function Landing() {
           <div className="grid md:grid-cols-4 gap-8">
             <div>
               <div className="flex items-center gap-2 mb-4">
-              <BellumLogo size={28} className="rounded-lg shadow-none ring-0" />
+                <BellumLogo size={28} className="rounded-lg shadow-none ring-0" />
                 <span className="font-display font-bold">Bellum AI</span>
               </div>
               <p className="text-sm text-foreground/50">Transformez un nom de compte en plan de conquête.</p>
